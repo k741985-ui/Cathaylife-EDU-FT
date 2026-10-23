@@ -260,23 +260,34 @@
             }
         }
 
-        // 渲染動態分類列
+        // 渲染動態分類列（包含 PM 刪除分類按鈕）
         function renderCategories() {
             const container = document.getElementById('categoryContainer');
             container.innerHTML = `
-                <button onclick="filterCategory('all')" class="cat-filter-btn active ${currentFilterCat === 'all' ? 'bg-emerald-100 text-emerald-800 font-medium border-emerald-300' : 'bg-slate-100 text-slate-600'} px-3 py-1 rounded-full text-xs transition border shrink-0" data-cat="all">全部教案</button>
+                <button onclick="filterCategory('all')" class="cat-filter-btn ${currentFilterCat === 'all' ? 'bg-emerald-100 text-emerald-800 font-medium border-emerald-300' : 'bg-slate-100 text-slate-600'} px-3 py-1 rounded-full text-xs transition border shrink-0" data-cat="all">全部教案</button>
             `;
 
             categories.forEach(cat => {
-                const btn = document.createElement('button');
-                btn.className = `cat-filter-btn ${currentFilterCat === cat ? 'bg-emerald-100 text-emerald-800 font-medium border-emerald-300' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'} px-3 py-1 rounded-full text-xs transition border shrink-0`;
-                btn.dataset.cat = cat;
-                btn.onclick = () => filterCategory(cat);
-                btn.innerText = cat;
-                container.appendChild(btn);
+                const wrapper = document.createElement('div');
+                wrapper.className = "inline-flex items-center shrink-0";
+
+                const isActive = currentFilterCat === cat;
+                const activeStyle = isActive ? 'bg-emerald-100 text-emerald-800 font-medium border-emerald-300' : 'bg-slate-100 text-slate-600 hover:bg-slate-200';
+
+                wrapper.innerHTML = `
+                    <button onclick="filterCategory('${cat}')" class="cat-filter-btn ${activeStyle} ${isPMMode ? 'rounded-l-full pr-1' : 'rounded-full px-3'} py-1 text-xs transition border-y border-l border-r ${!isPMMode ? 'border-r' : 'border-r-0'} shrink-0">
+                        ${cat}
+                    </button>
+                    ${isPMMode ? `
+                        <button onclick="deleteCategory('${cat}')" title="刪除 ${cat} 分類" class="${activeStyle} border-y border-r border-slate-300 rounded-r-full pr-2 pl-1 py-1 text-xs text-slate-400 hover:text-rose-600 transition">
+                            <i class="fa-solid fa-xmark"></i>
+                        </button>
+                    ` : ''}
+                `;
+                container.appendChild(wrapper);
             });
 
-            // 更新 Modal 內的下拉選單選項
+            // 更新 Modal 內的選單
             const select = document.getElementById('newCategory');
             select.innerHTML = '';
             categories.forEach(cat => {
@@ -287,7 +298,18 @@
             });
         }
 
-        // PM 動態新增分類 Prompt
+        // PM 刪除分類
+        function deleteCategory(catName) {
+            if (confirm(`確定要刪除「${catName}」分類嗎？（已發布的教案將不會被刪除）`)) {
+                categories = categories.filter(c => c !== catName);
+                if (currentFilterCat === catName) currentFilterCat = 'all';
+                saveData();
+                renderCategories();
+                renderCards();
+            }
+        }
+
+        // PM 新增分類
         function addNewCategoryPrompt() {
             const newCat = prompt('請輸入欲新增的教案分類名稱（例如：車輛稅、關稅、營利事業所得稅）：');
             if (newCat && newCat.trim() !== '') {
@@ -311,7 +333,7 @@
                     document.getElementById('pmStatusText').innerText = 'PM 模式：開啟中';
                     document.getElementById('pmModeBtn').classList.replace('bg-emerald-700', 'bg-amber-600');
                     document.getElementById('addCatBtn').classList.remove('hidden');
-                    alert('已切換為 PM 模式！您現在可以新增分類，並在卡片下方看到「✏️ 編輯」與「🗑️ 刪除」按鈕。');
+                    alert('已切換為 PM 模式！您現在可以新增/刪除分類，並在卡片下方看到「✏️ 編輯」與「🗑️ 刪除」按鈕。');
                 } else if (pass !== null) {
                     alert('密碼錯誤！請輸入 pm1234');
                 }
@@ -321,6 +343,7 @@
                 document.getElementById('pmModeBtn').classList.replace('bg-amber-600', 'bg-emerald-700');
                 document.getElementById('addCatBtn').classList.add('hidden');
             }
+            renderCategories();
             renderCards();
             if (activeLessonId) openSplitModal(activeLessonId);
         }
