@@ -13,7 +13,6 @@
     
     <style>
         body { font-family: 'Noto Sans TC', sans-serif; }
-        .glass-panel { background: rgba(255, 255, 255, 0.95); backdrop-filter: blur(8px); }
         .modal-body-scroll::-webkit-scrollbar { width: 6px; }
         .modal-body-scroll::-webkit-scrollbar-thumb { background-color: #cbd5e1; border-radius: 4px; }
     </style>
@@ -41,7 +40,7 @@
                     <i class="fa-solid fa-magnifying-glass absolute left-3 top-2.5 text-xs text-emerald-300"></i>
                 </div>
 
-                <button id="pmModeBtn" onclick="togglePMMode()" class="text-xs md:text-sm bg-emerald-700 hover:bg-emerald-600 px-3 py-1.5 rounded-full border border-emerald-500 transition flex items-center gap-1.5">
+                <button id="pmModeBtn" onclick="togglePMMode()" class="text-xs md:text-sm bg-emerald-700 hover:bg-emerald-600 px-3 py-1.5 rounded-full border border-emerald-500 transition flex items-center gap-1.5 font-bold">
                     <i class="fa-solid fa-user-gear"></i>
                     <span id="pmStatusText">PM 模式：關閉</span>
                 </button>
@@ -54,22 +53,29 @@
         </div>
     </header>
 
-    <!-- 分類篩選列 -->
+    <!-- 分類篩選與管理列 -->
     <div class="bg-white border-b border-slate-200 shadow-sm sticky top-[61px] z-20">
-        <div class="max-w-7xl mx-auto px-4 py-2 flex items-center gap-2 overflow-x-auto text-sm no-scrollbar">
-            <span class="text-xs font-bold text-slate-400 uppercase tracking-wider shrink-0">分類：</span>
-            <button onclick="filterCategory('all')" class="cat-filter-btn active bg-emerald-100 text-emerald-800 font-medium px-3 py-1 rounded-full text-xs transition border border-emerald-300 shrink-0" data-cat="all">全部教案</button>
-            <button onclick="filterCategory('所得稅')" class="cat-filter-btn bg-slate-100 text-slate-600 hover:bg-slate-200 px-3 py-1 rounded-full text-xs transition shrink-0" data-cat="所得稅">所得稅類</button>
-            <button onclick="filterCategory('房地產稅')" class="cat-filter-btn bg-slate-100 text-slate-600 hover:bg-slate-200 px-3 py-1 rounded-full text-xs transition shrink-0" data-cat="房地產稅">房地產稅類</button>
-            <button onclick="filterCategory('財富傳承')" class="cat-filter-btn bg-slate-100 text-slate-600 hover:bg-slate-200 px-3 py-1 rounded-full text-xs transition shrink-0" data-cat="財富傳承">財富傳承/遺贈稅</button>
-            <button onclick="filterCategory('營業稅')" class="cat-filter-btn bg-slate-100 text-slate-600 hover:bg-slate-200 px-3 py-1 rounded-full text-xs transition shrink-0" data-cat="營業稅">營業稅/公司稅</button>
+        <div class="max-w-7xl mx-auto px-4 py-2 flex items-center justify-between gap-2 overflow-x-auto text-sm no-scrollbar">
+            <div class="flex items-center gap-2 shrink-0">
+                <span class="text-xs font-bold text-slate-400 uppercase tracking-wider shrink-0">分類：</span>
+                <div id="categoryContainer" class="flex items-center gap-2 shrink-0">
+                    <!-- 分類按鈕將動態產生 -->
+                </div>
+                <!-- PM 新增分類按鈕 -->
+                <button id="addCatBtn" onclick="addNewCategoryPrompt()" class="hidden bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-300 px-3 py-1 rounded-full text-xs transition shrink-0 font-bold flex items-center gap-1">
+                    <i class="fa-solid fa-plus"></i> 新增分類
+                </button>
+            </div>
+            <button onclick="resetData()" class="text-xs text-rose-500 hover:text-rose-700 underline shrink-0">
+                <i class="fa-solid fa-arrows-rotate"></i> 重置所有資料
+            </button>
         </div>
     </div>
 
     <!-- 主要內容看板區 -->
     <main class="max-w-7xl mx-auto px-4 py-6 flex-grow w-full">
         <div id="cardGrid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            <!-- 教案卡片將由 JS 自動動態渲染 -->
+            <!-- 教案卡片動態渲染 -->
         </div>
     </main>
 
@@ -83,7 +89,6 @@
     <!-- 1. 雙欄分割教案預覽與討論 Modal -->
     <div id="splitViewerModal" class="fixed inset-0 bg-slate-900/80 z-50 hidden flex items-center justify-center p-2 md:p-4">
         <div class="bg-white rounded-xl shadow-2xl w-full max-w-6xl h-[92vh] flex flex-col overflow-hidden">
-            <!-- Modal Header -->
             <div class="bg-emerald-900 text-white px-4 py-3 flex justify-between items-center shrink-0">
                 <div class="flex items-center gap-2 overflow-hidden">
                     <span id="modalCatTag" class="text-xs bg-emerald-700 text-amber-300 font-bold px-2 py-0.5 rounded shrink-0">分類</span>
@@ -97,9 +102,8 @@
                 </button>
             </div>
 
-            <!-- Modal Content Body (雙欄分割) -->
             <div class="flex flex-col md:flex-row flex-grow overflow-hidden">
-                <!-- 左側：教案檔案預覽區 (70%) -->
+                <!-- 左側 70% 預覽 -->
                 <div class="w-full md:w-[65%] lg:w-[70%] bg-slate-200 border-r border-slate-300 flex flex-col h-1/2 md:h-full relative">
                     <div class="bg-slate-300 px-3 py-1.5 text-xs text-slate-600 flex justify-between items-center border-b border-slate-300">
                         <span><i class="fa-solid fa-file-pdf text-rose-600 mr-1"></i> 教案預覽視窗</span>
@@ -112,19 +116,15 @@
                     </div>
                 </div>
 
-                <!-- 右側：結構化留言討論牆 (30%) -->
+                <!-- 右側 30% 留言區 -->
                 <div class="w-full md:w-[35%] lg:w-[30%] bg-white flex flex-col h-1/2 md:h-full">
                     <div class="p-3 bg-slate-50 border-b border-slate-200 font-bold text-slate-700 text-sm flex justify-between items-center">
                         <span><i class="fa-solid fa-comments text-emerald-600 mr-1"></i> 講師回饋討論區</span>
                         <span id="modalCommentCount" class="text-xs bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded-full">0 則建議</span>
                     </div>
 
-                    <!-- 留言列表區 -->
-                    <div id="modalCommentsList" class="flex-grow p-3 overflow-y-auto modal-body-scroll space-y-3">
-                        <!-- 留言動態載入 -->
-                    </div>
+                    <div id="modalCommentsList" class="flex-grow p-3 overflow-y-auto modal-body-scroll space-y-3"></div>
 
-                    <!-- 新增留言區 -->
                     <div class="p-3 border-t border-slate-200 bg-slate-50 shrink-0">
                         <div id="lockWarningNotice" class="hidden mb-2 p-2 bg-amber-100 border border-amber-300 text-amber-800 text-xs rounded flex items-center justify-between">
                             <span>⚠️ 此教案已被 PM 鎖定，無法新增回饋。</span>
@@ -176,10 +176,7 @@
                 <div>
                     <label class="block text-xs font-bold text-slate-600 mb-1">教案分類 *</label>
                     <select id="newCategory" class="w-full border border-slate-300 rounded p-2 text-sm focus:ring-2 focus:ring-emerald-500 outline-none bg-white">
-                        <option value="所得稅">所得稅類</option>
-                        <option value="房地產稅">房地產稅類</option>
-                        <option value="財富傳承">財富傳承/遺贈稅</option>
-                        <option value="營業稅">營業稅/公司稅</option>
+                        <!-- 動態帶入分類選項 -->
                     </select>
                 </div>
                 <div>
@@ -202,7 +199,9 @@
 
     <!-- JavaScript 邏輯控制器 -->
     <script>
-        let sampleLessons = [
+        const sampleCategories = ['所得稅', '房地產稅', '財富傳承', '營業稅'];
+
+        const sampleLessons = [
             {
                 id: 'tax_001',
                 title: '2026 個人綜合所得稅實務與節稅範例',
@@ -227,6 +226,7 @@
             }
         ];
 
+        let categories = JSON.parse(localStorage.getItem('estate_categories')) || sampleCategories;
         let lessons = JSON.parse(localStorage.getItem('estate_lessons')) || sampleLessons;
         let isPMMode = false;
         let currentFilterCat = 'all';
@@ -234,6 +234,7 @@
 
         window.onload = () => {
             saveData();
+            renderCategories();
             renderCards();
             const savedName = localStorage.getItem('estate_user_name');
             if (savedName) {
@@ -243,6 +244,63 @@
 
         function saveData() {
             localStorage.setItem('estate_lessons', JSON.stringify(lessons));
+            localStorage.setItem('estate_categories', JSON.stringify(categories));
+        }
+
+        function resetData() {
+            if (confirm('確定要清除所有測試與新增資料，恢復成預設範例嗎？')) {
+                localStorage.removeItem('estate_lessons');
+                localStorage.removeItem('estate_categories');
+                categories = JSON.parse(JSON.stringify(sampleCategories));
+                lessons = JSON.parse(JSON.stringify(sampleLessons));
+                saveData();
+                renderCategories();
+                renderCards();
+                alert('已成功恢復預設設定！');
+            }
+        }
+
+        // 渲染動態分類列
+        function renderCategories() {
+            const container = document.getElementById('categoryContainer');
+            container.innerHTML = `
+                <button onclick="filterCategory('all')" class="cat-filter-btn active ${currentFilterCat === 'all' ? 'bg-emerald-100 text-emerald-800 font-medium border-emerald-300' : 'bg-slate-100 text-slate-600'} px-3 py-1 rounded-full text-xs transition border shrink-0" data-cat="all">全部教案</button>
+            `;
+
+            categories.forEach(cat => {
+                const btn = document.createElement('button');
+                btn.className = `cat-filter-btn ${currentFilterCat === cat ? 'bg-emerald-100 text-emerald-800 font-medium border-emerald-300' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'} px-3 py-1 rounded-full text-xs transition border shrink-0`;
+                btn.dataset.cat = cat;
+                btn.onclick = () => filterCategory(cat);
+                btn.innerText = cat;
+                container.appendChild(btn);
+            });
+
+            // 更新 Modal 內的下拉選單選項
+            const select = document.getElementById('newCategory');
+            select.innerHTML = '';
+            categories.forEach(cat => {
+                const opt = document.createElement('option');
+                opt.value = cat;
+                opt.innerText = cat;
+                select.appendChild(opt);
+            });
+        }
+
+        // PM 動態新增分類 Prompt
+        function addNewCategoryPrompt() {
+            const newCat = prompt('請輸入欲新增的教案分類名稱（例如：車輛稅、關稅、營利事業所得稅）：');
+            if (newCat && newCat.trim() !== '') {
+                const trimmed = newCat.trim();
+                if (!categories.includes(trimmed)) {
+                    categories.push(trimmed);
+                    saveData();
+                    renderCategories();
+                    alert(`成功新增分類：「${trimmed}」！`);
+                } else {
+                    alert('此分類已經存在囉！');
+                }
+            }
         }
 
         function togglePMMode() {
@@ -252,14 +310,16 @@
                     isPMMode = true;
                     document.getElementById('pmStatusText').innerText = 'PM 模式：開啟中';
                     document.getElementById('pmModeBtn').classList.replace('bg-emerald-700', 'bg-amber-600');
-                    alert('已切換為 PM 模式，您現在可以編輯教案、刪除教案與設定狀態。');
+                    document.getElementById('addCatBtn').classList.remove('hidden');
+                    alert('已切換為 PM 模式！您現在可以新增分類，並在卡片下方看到「✏️ 編輯」與「🗑️ 刪除」按鈕。');
                 } else if (pass !== null) {
-                    alert('密碼錯誤！');
+                    alert('密碼錯誤！請輸入 pm1234');
                 }
             } else {
                 isPMMode = false;
                 document.getElementById('pmStatusText').innerText = 'PM 模式：關閉';
                 document.getElementById('pmModeBtn').classList.replace('bg-amber-600', 'bg-emerald-700');
+                document.getElementById('addCatBtn').classList.add('hidden');
             }
             renderCards();
             if (activeLessonId) openSplitModal(activeLessonId);
@@ -295,6 +355,32 @@
                 if (lesson.status === '修改中') statusBg = 'bg-blue-100 text-blue-800 border-blue-300';
                 if (lesson.status === '已完稿') statusBg = 'bg-emerald-100 text-emerald-800 border-emerald-300';
 
+                let pmControlHTML = '';
+                if (isPMMode) {
+                    pmControlHTML = `
+                        <div class="bg-amber-50 p-2.5 border-t border-amber-200 flex justify-between items-center text-xs gap-1">
+                            <div class="flex gap-1">
+                                <button onclick="openEditLessonModal('${lesson.id}')" class="px-2.5 py-1 bg-blue-600 text-white rounded hover:bg-blue-700 font-bold flex items-center gap-1 shadow-sm">
+                                    <i class="fa-solid fa-pen"></i> 編輯
+                                </button>
+                                <button onclick="deleteLesson('${lesson.id}')" class="px-2.5 py-1 bg-rose-600 text-white rounded hover:bg-rose-700 font-bold flex items-center gap-1 shadow-sm">
+                                    <i class="fa-solid fa-trash"></i> 刪除
+                                </button>
+                            </div>
+                            <div class="flex gap-1 items-center">
+                                <button onclick="toggleLock('${lesson.id}')" class="px-2 py-1 bg-white border border-amber-300 text-slate-700 rounded hover:bg-amber-100 font-medium">
+                                    ${lesson.isLocked ? '🔓 解鎖' : '🔒 鎖定'}
+                                </button>
+                                <select onchange="changeStatus('${lesson.id}', this.value)" class="bg-white border border-amber-300 rounded px-1.5 py-1 text-slate-700 font-medium">
+                                    <option value="徵求回饋中" ${lesson.status==='徵求回饋中'?'selected':''}>徵求中</option>
+                                    <option value="修改中" ${lesson.status==='修改中'?'selected':''}>修改中</option>
+                                    <option value="已完稿" ${lesson.status==='已完稿'?'selected':''}>已完稿</option>
+                                </select>
+                            </div>
+                        </div>
+                    `;
+                }
+
                 card.innerHTML = `
                     <div class="p-5">
                         <div class="flex justify-between items-start gap-2 mb-2">
@@ -327,34 +413,12 @@
                         </span>
                     </div>
 
-                    ${isPMMode ? `
-                        <div class="bg-amber-50 p-2 border-t border-amber-200 flex justify-between items-center text-xs">
-                            <div class="flex gap-1">
-                                <button onclick="openEditLessonModal('${lesson.id}')" class="px-2 py-0.5 bg-blue-600 text-white rounded hover:bg-blue-700 font-bold">
-                                    <i class="fa-solid fa-pen"></i> 編輯
-                                </button>
-                                <button onclick="deleteLesson('${lesson.id}')" class="px-2 py-0.5 bg-rose-600 text-white rounded hover:bg-rose-700 font-bold">
-                                    <i class="fa-solid fa-trash"></i> 刪除
-                                </button>
-                            </div>
-                            <div class="flex gap-1">
-                                <button onclick="toggleLock('${lesson.id}')" class="px-2 py-0.5 bg-white border border-amber-300 rounded hover:bg-amber-100">
-                                    ${lesson.isLocked ? '解鎖' : '鎖定'}
-                                </button>
-                                <select onchange="changeStatus('${lesson.id}', this.value)" class="bg-white border border-amber-300 rounded px-1 py-0.5">
-                                    <option value="徵求回饋中" ${lesson.status==='徵求回饋中'?'selected':''}>徵求中</option>
-                                    <option value="修改中" ${lesson.status==='修改中'?'selected':''}>修改中</option>
-                                    <option value="已完稿" ${lesson.status==='已完稿'?'selected':''}>已完稿</option>
-                                </select>
-                            </div>
-                        </div>
-                    ` : ''}
+                    ${pmControlHTML}
                 `;
                 grid.appendChild(card);
             });
         }
 
-        // PM 編輯與刪除教案功能
         function openEditLessonModal(id) {
             const lesson = lessons.find(l => l.id === id);
             if (!lesson) return;
@@ -370,7 +434,7 @@
         }
 
         function deleteLesson(id) {
-            if (confirm('確定要徹底刪除此教案與相關留言嗎？（刪除後無法恢復）')) {
+            if (confirm('確定要徹底刪除此教案嗎？（刪除後無法恢復）')) {
                 lessons = lessons.filter(l => l.id !== id);
                 saveData();
                 renderCards();
@@ -386,7 +450,6 @@
             const description = document.getElementById('newDescription').value.trim();
 
             if (editId) {
-                // 編輯模式
                 const lesson = lessons.find(l => l.id === editId);
                 if (lesson) {
                     lesson.title = title;
@@ -395,7 +458,6 @@
                     lesson.description = description;
                 }
             } else {
-                // 新增模式
                 const newLesson = {
                     id: 'tax_' + Date.now(),
                     title,
@@ -573,15 +635,7 @@
 
         function filterCategory(cat) {
             currentFilterCat = cat;
-            document.querySelectorAll('.cat-filter-btn').forEach(btn => {
-                if (btn.dataset.cat === cat) {
-                    btn.classList.add('bg-emerald-100', 'text-emerald-800', 'font-medium', 'border-emerald-300');
-                    btn.classList.remove('bg-slate-100', 'text-slate-600');
-                } else {
-                    btn.classList.remove('bg-emerald-100', 'text-emerald-800', 'font-medium', 'border-emerald-300');
-                    btn.classList.add('bg-slate-100', 'text-slate-600');
-                }
-            });
+            renderCategories();
             renderCards();
         }
 
