@@ -69,7 +69,7 @@
     <!-- 主要內容看板區 -->
     <main class="max-w-7xl mx-auto px-4 py-6 flex-grow w-full">
         <div id="cardGrid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            <!-- 教案卡片將由 JS 自動動態渲染渲染 -->
+            <!-- 教案卡片將由 JS 自動動態渲染 -->
         </div>
     </main>
 
@@ -163,10 +163,11 @@
     <!-- 2. 新增/編輯教案 Modal -->
     <div id="addLessonModal" class="fixed inset-0 bg-slate-900/60 z-50 hidden flex items-center justify-center p-4">
         <div class="bg-white rounded-xl shadow-xl w-full max-w-md p-6">
-            <h3 class="text-lg font-bold text-slate-800 mb-4 flex items-center gap-2">
+            <h3 id="lessonModalTitle" class="text-lg font-bold text-slate-800 mb-4 flex items-center gap-2">
                 <i class="fa-solid fa-file-circle-plus text-emerald-600"></i> 發布新教案
             </h3>
-            <form onsubmit="handleAddLesson(event)" class="space-y-4">
+            <form onsubmit="handleSaveLesson(event)" class="space-y-4">
+                <input type="hidden" id="editLessonId" value="">
                 <div>
                     <label class="block text-xs font-bold text-slate-600 mb-1">教案名稱 *</label>
                     <input type="text" id="newTitle" required placeholder="例如：2026 個人綜所稅房地產新制實務" 
@@ -193,7 +194,7 @@
                 </div>
                 <div class="flex justify-end gap-2 pt-2">
                     <button type="button" onclick="closeAddLessonModal()" class="px-4 py-2 text-sm text-slate-600 hover:bg-slate-100 rounded">取消</button>
-                    <button type="submit" class="px-4 py-2 text-sm bg-emerald-700 hover:bg-emerald-600 text-white font-bold rounded">發布教案</button>
+                    <button type="submit" class="px-4 py-2 text-sm bg-emerald-700 hover:bg-emerald-600 text-white font-bold rounded">儲存教案</button>
                 </div>
             </form>
         </div>
@@ -201,7 +202,6 @@
 
     <!-- JavaScript 邏輯控制器 -->
     <script>
-        // 本地預設展示資料庫
         let sampleLessons = [
             {
                 id: 'tax_001',
@@ -222,65 +222,19 @@
                         content: '累進稅率計算公式的特別扣除額數字似乎未套用 2026 最新調升金額，請 PM 確認。',
                         isAdopted: true,
                         createdAt: '10/12 14:20'
-                    },
-                    {
-                        id: 'c2',
-                        author: '陳財稅師',
-                        category: '[⚖️ 法條/時事更新]',
-                        page: '第 15 頁',
-                        content: '建議補上財政部 114 年底最新的最新函釋字號，更具說服力。',
-                        isAdopted: false,
-                        createdAt: '10/14 09:15'
                     }
                 ]
-            },
-            {
-                id: 'tax_002',
-                title: '房地合一稅 2.0 與重購退稅全解析',
-                category: '房地產稅',
-                description: '針對不動產交易短期持有稅率、個人與受控外國企業 (CFC) 架構買賣房屋之稅務風險對比。',
-                fileUrl: 'https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf',
-                status: '修改中',
-                isLocked: false,
-                createdBy: 'PM 小魏',
-                createdAt: '2026-10-15',
-                comments: [
-                    {
-                        id: 'c3',
-                        author: '林講師',
-                        category: '[🎨 簡報排版建言]',
-                        page: '第 3 頁流程圖',
-                        content: '五年內持有稅率 45% 與 35% 的時間軸圖示顏色太相近，簡報發表時遠看容易混淆。',
-                        isAdopted: true,
-                        createdAt: '10-16 11:30'
-                    }
-                ]
-            },
-            {
-                id: 'tax_003',
-                title: '家族財富傳承：遺贈稅與信託規劃策略',
-                category: '財富傳承',
-                description: '擬定跨世代資產移轉策略，包含人壽保險金指定受益人、實物繼承與公同共有土地處分稅務。',
-                fileUrl: 'https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf',
-                status: '已完稿',
-                isLocked: true,
-                createdBy: '黃首席顧問',
-                createdAt: '2026-09-28',
-                comments: []
             }
         ];
 
-        // 應用程式狀態管理
         let lessons = JSON.parse(localStorage.getItem('estate_lessons')) || sampleLessons;
         let isPMMode = false;
         let currentFilterCat = 'all';
         let activeLessonId = null;
 
-        // 初始化
         window.onload = () => {
             saveData();
             renderCards();
-            // 自動帶入記憶的姓名
             const savedName = localStorage.getItem('estate_user_name');
             if (savedName) {
                 document.getElementById('commentAuthor').value = savedName;
@@ -291,7 +245,6 @@
             localStorage.setItem('estate_lessons', JSON.stringify(lessons));
         }
 
-        // PM 模式切換
         function togglePMMode() {
             if (!isPMMode) {
                 const pass = prompt('請輸入 PM 管理員通行密碼 (預設: pm1234)：');
@@ -299,7 +252,7 @@
                     isPMMode = true;
                     document.getElementById('pmStatusText').innerText = 'PM 模式：開啟中';
                     document.getElementById('pmModeBtn').classList.replace('bg-emerald-700', 'bg-amber-600');
-                    alert('已順利切換為 PM 管理模式，您現在可以修改狀態、鎖定教案及標記採納回饋。');
+                    alert('已切換為 PM 模式，您現在可以編輯教案、刪除教案與設定狀態。');
                 } else if (pass !== null) {
                     alert('密碼錯誤！');
                 }
@@ -312,7 +265,6 @@
             if (activeLessonId) openSplitModal(activeLessonId);
         }
 
-        // 渲染教案卡片看板
         function renderCards() {
             const grid = document.getElementById('cardGrid');
             const searchKw = document.getElementById('searchInput').value.toLowerCase();
@@ -338,7 +290,6 @@
                 const card = document.createElement('div');
                 card.className = "bg-white rounded-xl border border-slate-200 shadow-sm hover:shadow-md transition flex flex-col justify-between overflow-hidden relative";
 
-                // 狀態 Badge 顏色
                 let statusBg = 'bg-slate-100 text-slate-600';
                 if (lesson.status === '徵求回饋中') statusBg = 'bg-amber-100 text-amber-800 border-amber-300';
                 if (lesson.status === '修改中') statusBg = 'bg-blue-100 text-blue-800 border-blue-300';
@@ -367,10 +318,9 @@
                         </div>
                     </div>
 
-                    <!-- 卡片底部行動列 -->
                     <div class="bg-slate-50 px-5 py-3 border-t border-slate-100 flex items-center justify-between">
                         <button onclick="openSplitModal('${lesson.id}')" class="text-xs text-emerald-700 font-bold hover:text-emerald-900 flex items-center gap-1">
-                            <i class="fa-solid fa-[#00a86b] fa-book-open"></i> 開啟教案預覽與留言
+                            <i class="fa-solid fa-book-open"></i> 預覽與留言
                         </button>
                         <span class="text-xs text-slate-500 font-medium bg-slate-200/60 px-2 py-0.5 rounded-full">
                             💬 ${commentCount} 則建議
@@ -379,7 +329,14 @@
 
                     ${isPMMode ? `
                         <div class="bg-amber-50 p-2 border-t border-amber-200 flex justify-between items-center text-xs">
-                            <span class="font-bold text-amber-800">PM 管理：</span>
+                            <div class="flex gap-1">
+                                <button onclick="openEditLessonModal('${lesson.id}')" class="px-2 py-0.5 bg-blue-600 text-white rounded hover:bg-blue-700 font-bold">
+                                    <i class="fa-solid fa-pen"></i> 編輯
+                                </button>
+                                <button onclick="deleteLesson('${lesson.id}')" class="px-2 py-0.5 bg-rose-600 text-white rounded hover:bg-rose-700 font-bold">
+                                    <i class="fa-solid fa-trash"></i> 刪除
+                                </button>
+                            </div>
                             <div class="flex gap-1">
                                 <button onclick="toggleLock('${lesson.id}')" class="px-2 py-0.5 bg-white border border-amber-300 rounded hover:bg-amber-100">
                                     ${lesson.isLocked ? '解鎖' : '鎖定'}
@@ -397,7 +354,79 @@
             });
         }
 
-        // 開啟雙欄預覽 Modal
+        // PM 編輯與刪除教案功能
+        function openEditLessonModal(id) {
+            const lesson = lessons.find(l => l.id === id);
+            if (!lesson) return;
+
+            document.getElementById('editLessonId').value = lesson.id;
+            document.getElementById('newTitle').value = lesson.title;
+            document.getElementById('newCategory').value = lesson.category;
+            document.getElementById('newFileUrl').value = lesson.fileUrl;
+            document.getElementById('newDescription').value = lesson.description;
+            
+            document.getElementById('lessonModalTitle').innerHTML = '<i class="fa-solid fa-pen-to-square text-blue-600"></i> 編輯教案資料';
+            document.getElementById('addLessonModal').classList.remove('hidden');
+        }
+
+        function deleteLesson(id) {
+            if (confirm('確定要徹底刪除此教案與相關留言嗎？（刪除後無法恢復）')) {
+                lessons = lessons.filter(l => l.id !== id);
+                saveData();
+                renderCards();
+            }
+        }
+
+        function handleSaveLesson(e) {
+            e.preventDefault();
+            const editId = document.getElementById('editLessonId').value;
+            const title = document.getElementById('newTitle').value.trim();
+            const category = document.getElementById('newCategory').value;
+            const fileUrl = document.getElementById('newFileUrl').value.trim();
+            const description = document.getElementById('newDescription').value.trim();
+
+            if (editId) {
+                // 編輯模式
+                const lesson = lessons.find(l => l.id === editId);
+                if (lesson) {
+                    lesson.title = title;
+                    lesson.category = category;
+                    lesson.fileUrl = fileUrl;
+                    lesson.description = description;
+                }
+            } else {
+                // 新增模式
+                const newLesson = {
+                    id: 'tax_' + Date.now(),
+                    title,
+                    category,
+                    fileUrl,
+                    description,
+                    status: '徵求回饋中',
+                    isLocked: false,
+                    createdBy: isPMMode ? 'PM 管理員' : '莊園講師',
+                    createdAt: new Date().toISOString().split('T')[0],
+                    comments: []
+                };
+                lessons.unshift(newLesson);
+            }
+
+            saveData();
+            renderCards();
+            closeAddLessonModal();
+        }
+
+        function openAddLessonModal() {
+            document.getElementById('editLessonId').value = '';
+            document.getElementById('lessonModalTitle').innerHTML = '<i class="fa-solid fa-file-circle-plus text-emerald-600"></i> 發布新教案';
+            document.querySelector('#addLessonModal form').reset();
+            document.getElementById('addLessonModal').classList.remove('hidden');
+        }
+
+        function closeAddLessonModal() {
+            document.getElementById('addLessonModal').classList.add('hidden');
+        }
+
         function openSplitModal(id) {
             activeLessonId = id;
             const lesson = lessons.find(l => l.id === id);
@@ -408,7 +437,6 @@
             document.getElementById('modalExternalLink').href = lesson.fileUrl;
             document.getElementById('pdfIframe').src = lesson.fileUrl;
 
-            // 鎖定狀態 UI 處理
             const lockBadge = document.getElementById('modalLockBadge');
             const commentForm = document.getElementById('commentForm');
             const lockNotice = document.getElementById('lockWarningNotice');
@@ -433,7 +461,6 @@
             activeLessonId = null;
         }
 
-        // 渲染留言討論牆
         function renderComments(lesson) {
             const list = document.getElementById('modalCommentsList');
             const countSpan = document.getElementById('modalCommentCount');
@@ -475,7 +502,6 @@
             });
         }
 
-        // 發布留言 handler
         function handleAddComment(e) {
             e.preventDefault();
             if (!activeLessonId) return;
@@ -493,7 +519,6 @@
 
             if (!author || !content) return;
 
-            // 記憶使用者姓名
             localStorage.setItem('estate_user_name', author);
 
             const newComment = {
@@ -511,12 +536,10 @@
             renderComments(lesson);
             renderCards();
 
-            // 清空內容
             document.getElementById('commentContent').value = '';
             document.getElementById('commentPage').value = '';
         }
 
-        // PM 控制動作
         function toggleLock(id) {
             const lesson = lessons.find(l => l.id === id);
             if (lesson) {
@@ -548,45 +571,6 @@
             }
         }
 
-        // 新增教案 Modal 控制
-        function openAddLessonModal() {
-            document.getElementById('addLessonModal').classList.remove('hidden');
-        }
-
-        function closeAddLessonModal() {
-            document.getElementById('addLessonModal').classList.add('hidden');
-        }
-
-        function handleAddLesson(e) {
-            e.preventDefault();
-            const title = document.getElementById('newTitle').value.trim();
-            const category = document.getElementById('newCategory').value;
-            const fileUrl = document.getElementById('newFileUrl').value.trim();
-            const description = document.getElementById('newDescription').value.trim();
-
-            const newLesson = {
-                id: 'tax_' + Date.now(),
-                title,
-                category,
-                fileUrl,
-                description,
-                status: '徵求回饋中',
-                isLocked: false,
-                createdBy: isPMMode ? 'PM 管理員' : '莊園講師',
-                createdAt: new Date().toISOString().split('T')[0],
-                comments: []
-            };
-
-            lessons.unshift(newLesson);
-            saveData();
-            renderCards();
-            closeAddLessonModal();
-            
-            // 重置表單
-            e.target.reset();
-        }
-
-        // 輔助功能
         function filterCategory(cat) {
             currentFilterCat = cat;
             document.querySelectorAll('.cat-filter-btn').forEach(btn => {
