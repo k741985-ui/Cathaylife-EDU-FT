@@ -66,8 +66,8 @@
                     <i class="fa-solid fa-plus"></i> 新增分類
                 </button>
             </div>
-            <button onclick="resetData()" class="text-xs text-rose-500 hover:text-rose-700 underline shrink-0">
-                <i class="fa-solid fa-arrows-rotate"></i> 重置所有資料
+            <button onclick="resetData()" class="text-xs text-rose-500 hover:text-rose-700 underline shrink-0 font-bold">
+                <i class="fa-solid fa-arrows-rotate"></i> 重置並同步最新教案
             </button>
         </div>
     </div>
@@ -212,9 +212,8 @@
                 isLocked: false,
                 createdBy: 'PM管理員',
                 createdAt: '2026-10-27',
-                comments: [  ]
-            }
-        ],
+                comments: []
+            },
             {
                 id: 'tax_002',
                 title: '高資專題班教案',
@@ -225,9 +224,8 @@
                 isLocked: false,
                 createdBy: 'PM管理員',
                 createdAt: '2026-10-27',
-                comments: [  ]
-            }
-        ],
+                comments: []
+            },
             {
                 id: 'tax_003',
                 title: '高資專題班教案',
@@ -238,9 +236,8 @@
                 isLocked: false,
                 createdBy: 'PM管理員',
                 createdAt: '2026-10-27',
-                comments: [  ]
-            }
-        ],
+                comments: []
+            },
             {
                 id: 'tax_004',
                 title: '高資專題班教案',
@@ -251,9 +248,8 @@
                 isLocked: false,
                 createdBy: 'PM管理員',
                 createdAt: '2026-10-27',
-                comments: [  ]
-            }
-        ],
+                comments: []
+            },
             {
                 id: 'tax_005',
                 title: '高資專題班教案',
@@ -264,9 +260,10 @@
                 isLocked: false,
                 createdBy: 'PM管理員',
                 createdAt: '2026-10-27',
-                comments: [  ]
+                comments: []
             }
         ];
+
         let categories = JSON.parse(localStorage.getItem('estate_categories')) || sampleCategories;
         let lessons = JSON.parse(localStorage.getItem('estate_lessons')) || sampleLessons;
         let isPMMode = false;
@@ -289,19 +286,16 @@
         }
 
         function resetData() {
-            if (confirm('確定要清除所有測試與新增資料，恢復成預設範例嗎？')) {
-                localStorage.removeItem('estate_lessons');
-                localStorage.removeItem('estate_categories');
-                categories = JSON.parse(JSON.stringify(sampleCategories));
-                lessons = JSON.parse(JSON.stringify(sampleLessons));
-                saveData();
-                renderCategories();
-                renderCards();
-                alert('已成功恢復預設設定！');
-            }
+            localStorage.removeItem('estate_lessons');
+            localStorage.removeItem('estate_categories');
+            categories = JSON.parse(JSON.stringify(sampleCategories));
+            lessons = JSON.parse(JSON.stringify(sampleLessons));
+            saveData();
+            renderCategories();
+            renderCards();
+            alert('已成功同步 GitHub 最新教案資料！');
         }
 
-        // 渲染動態分類列（包含 PM 刪除分類按鈕）
         function renderCategories() {
             const container = document.getElementById('categoryContainer');
             container.innerHTML = `
@@ -328,7 +322,6 @@
                 container.appendChild(wrapper);
             });
 
-            // 更新 Modal 內的選單
             const select = document.getElementById('newCategory');
             select.innerHTML = '';
             categories.forEach(cat => {
@@ -339,9 +332,8 @@
             });
         }
 
-        // PM 刪除分類
         function deleteCategory(catName) {
-            if (confirm(`確定要刪除「${catName}」分類嗎？（已發布的教案將不會被刪除）`)) {
+            if (confirm(`確定要刪除「${catName}」分類嗎？`)) {
                 categories = categories.filter(c => c !== catName);
                 if (currentFilterCat === catName) currentFilterCat = 'all';
                 saveData();
@@ -350,18 +342,16 @@
             }
         }
 
-        // PM 新增分類
         function addNewCategoryPrompt() {
-            const newCat = prompt('請輸入欲新增的教案分類名稱（例如：車輛稅、關稅、營利事業所得稅）：');
+            const newCat = prompt('請輸入欲新增的教案分類名稱：');
             if (newCat && newCat.trim() !== '') {
                 const trimmed = newCat.trim();
                 if (!categories.includes(trimmed)) {
                     categories.push(trimmed);
                     saveData();
                     renderCategories();
-                    alert(`成功新增分類：「${trimmed}」！`);
                 } else {
-                    alert('此分類已經存在囉！');
+                    alert('此分類已經存在！');
                 }
             }
         }
@@ -374,7 +364,6 @@
                     document.getElementById('pmStatusText').innerText = 'PM 模式：開啟中';
                     document.getElementById('pmModeBtn').classList.replace('bg-emerald-700', 'bg-amber-600');
                     document.getElementById('addCatBtn').classList.remove('hidden');
-                    alert('已切換為 PM 模式！您現在可以新增/刪除分類，並在卡片下方看到「✏️ 編輯」與「🗑️ 刪除」按鈕。');
                 } else if (pass !== null) {
                     alert('密碼錯誤！請輸入 pm1234');
                 }
@@ -498,7 +487,7 @@
         }
 
         function deleteLesson(id) {
-            if (confirm('確定要徹底刪除此教案嗎？（刪除後無法恢復）')) {
+            if (confirm('確定要徹底刪除此教案嗎？')) {
                 lessons = lessons.filter(l => l.id !== id);
                 saveData();
                 renderCards();
