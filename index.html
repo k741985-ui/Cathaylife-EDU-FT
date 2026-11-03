@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>財稅莊園 - 教案回饋牆</title>
+    <title>財稅莊園 - 教案回饋牆 (即時同步版)</title>
     <!-- Tailwind CSS CDN -->
     <script src="https://cdn.tailwindcss.com"></script>
     <!-- FontAwesome Font Icons -->
@@ -11,13 +11,52 @@
     <!-- Google Fonts -->
     <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700&display=swap" rel="stylesheet">
     
+    <!-- Firebase SDK (v9 模組化載入) -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.1/firebase-app.js";
+        import { getDatabase, ref, onValue, set } from "https://www.gstatic.com/firebasejs/9.22.1/firebase-database.js";
+
+        // ⚠️ 請替換為您在 Firebase 申請到的 firebaseConfig 設定 ⚠️
+        const firebaseConfig = {
+        apiKey: "AIzaSyAdIAh1uG2RZ2CdV3xqkhCafZ4Vm3wEabM",
+        authDomain: "tax-estate-edu.firebaseapp.com",
+        projectId: "tax-estate-edu",
+        storageBucket: "tax-estate-edu.firebasestorage.app",
+        messagingSenderId: "664980813915",
+        appId: "1:664980813915:web:db40721c16877e5d5fe77e",
+        measurementId: "G-KYNR5QK9H9"
+         };
+
+        const app = initializeApp(firebaseConfig);
+        const db = getDatabase(app);
+        window.fbDb = db;
+        window.fbRef = ref;
+        window.fbOnValue = onValue;
+        window.fbSet = set;
+    </script>
+
     <style>
-        body { font-family: 'Noto Sans TC', sans-serif; }
+        body { 
+            font-family: 'Noto Sans TC', sans-serif;
+            -webkit-user-select: none;
+            -moz-user-select: none;
+            -ms-user-select: none;
+            user-select: none;
+        }
         .modal-body-scroll::-webkit-scrollbar { width: 6px; }
         .modal-body-scroll::-webkit-scrollbar-thumb { background-color: #cbd5e1; border-radius: 4px; }
+        
+        input, textarea, select {
+            -webkit-user-select: text !important;
+            -moz-user-select: text !important;
+            -ms-user-select: text !important;
+            user-select: text !important;
+        }
+
+        @media print { body { display: none !important; } }
     </style>
 </head>
-<body class="bg-slate-100 min-h-screen text-slate-800 flex flex-col">
+<body class="bg-slate-100 min-h-screen text-slate-800 flex flex-col" oncontextmenu="return false;">
 
     <!-- 頂部導覽列 -->
     <header class="bg-emerald-800 text-white shadow-md sticky top-0 z-30">
@@ -28,11 +67,11 @@
                 </div>
                 <div>
                     <h1 class="text-xl font-bold tracking-wide">財稅莊園</h1>
-                    <p class="text-xs text-emerald-200">教案意見收集與協同回饋牆</p>
+                    <p class="text-xs text-emerald-200">教案意見收集與協同回饋牆 (即時連線)</p>
                 </div>
             </div>
 
-            <!-- 控制列：搜尋、PM 模式、新增教案 -->
+            <!-- 控制列：搜尋、PM 模式、修改密碼、新增教案 -->
             <div class="flex items-center gap-2 flex-wrap">
                 <div class="relative">
                     <input type="text" id="searchInput" oninput="renderCards()" placeholder="搜尋教案、關鍵字..." 
@@ -43,6 +82,10 @@
                 <button id="pmModeBtn" onclick="togglePMMode()" class="text-xs md:text-sm bg-emerald-700 hover:bg-emerald-600 px-3 py-1.5 rounded-full border border-emerald-500 transition flex items-center gap-1.5 font-bold">
                     <i class="fa-solid fa-user-gear"></i>
                     <span id="pmStatusText">PM 模式：關閉</span>
+                </button>
+
+                <button id="changePmPassBtn" onclick="changePMPassword()" class="hidden text-xs md:text-sm bg-amber-600 hover:bg-amber-500 text-white px-3 py-1.5 rounded-full border border-amber-400 transition flex items-center gap-1 font-bold">
+                    <i class="fa-solid fa-key"></i> 修改密碼
                 </button>
 
                 <button onclick="openAddLessonModal()" class="text-xs md:text-sm bg-amber-500 hover:bg-amber-400 text-emerald-950 font-bold px-3 py-1.5 rounded-full transition shadow flex items-center gap-1.5">
@@ -58,35 +101,28 @@
         <div class="max-w-7xl mx-auto px-4 py-2 flex items-center justify-between gap-2 overflow-x-auto text-sm no-scrollbar">
             <div class="flex items-center gap-2 shrink-0">
                 <span class="text-xs font-bold text-slate-400 uppercase tracking-wider shrink-0">分類：</span>
-                <div id="categoryContainer" class="flex items-center gap-2 shrink-0">
-                    <!-- 分類按鈕將動態產生 -->
-                </div>
-                <!-- PM 新增分類按鈕 -->
+                <div id="categoryContainer" class="flex items-center gap-2 shrink-0"></div>
                 <button id="addCatBtn" onclick="addNewCategoryPrompt()" class="hidden bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-300 px-3 py-1 rounded-full text-xs transition shrink-0 font-bold flex items-center gap-1">
                     <i class="fa-solid fa-plus"></i> 新增分類
                 </button>
             </div>
-            <button onclick="resetData()" class="text-xs text-rose-500 hover:text-rose-700 underline shrink-0 font-bold">
-                <i class="fa-solid fa-arrows-rotate"></i> 重置並同步最新教案
-            </button>
+            <span id="syncStatusTag" class="text-xs bg-emerald-100 text-emerald-800 font-bold px-2.5 py-1 rounded-full flex items-center gap-1">
+                <i class="fa-solid fa-wifi text-emerald-600 animate-pulse"></i> 雲端即時連線中
+            </span>
         </div>
     </div>
 
     <!-- 主要內容看板區 -->
     <main class="max-w-7xl mx-auto px-4 py-6 flex-grow w-full">
-        <div id="cardGrid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            <!-- 教案卡片動態渲染 -->
-        </div>
+        <div id="cardGrid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6"></div>
     </main>
 
-    <!-- 頁尾 -->
     <footer class="bg-slate-800 text-slate-400 py-4 text-center text-xs mt-auto">
-        財稅莊園團隊專屬協同系統 &copy; 2026 | 支援即時預覽與雙欄教案回饋
+        財稅莊園團隊專屬協同系統 &copy; 2026 | 全端雲端即時同步
     </footer>
 
-    <!-- ==================== MODALS ==================== -->
-
-    <!-- 1. 雙欄分割教案預覽與討論 Modal -->
+    <!-- MODALS -->
+    <!-- 預覽與討論 Modal -->
     <div id="splitViewerModal" class="fixed inset-0 bg-slate-900/80 z-50 hidden flex items-center justify-center p-2 md:p-4">
         <div class="bg-white rounded-xl shadow-2xl w-full max-w-6xl h-[92vh] flex flex-col overflow-hidden">
             <div class="bg-emerald-900 text-white px-4 py-3 flex justify-between items-center shrink-0">
@@ -103,20 +139,16 @@
             </div>
 
             <div class="flex flex-col md:flex-row flex-grow overflow-hidden">
-                <!-- 左側 70% 預覽 -->
                 <div class="w-full md:w-[65%] lg:w-[70%] bg-slate-200 border-r border-slate-300 flex flex-col h-1/2 md:h-full relative">
                     <div class="bg-slate-300 px-3 py-1.5 text-xs text-slate-600 flex justify-between items-center border-b border-slate-300">
-                        <span><i class="fa-solid fa-file-pdf text-rose-600 mr-1"></i> 教案預覽視窗</span>
-                        <a id="modalExternalLink" href="#" target="_blank" class="text-emerald-700 hover:underline font-bold flex items-center gap-1">
-                            另開外鏈視窗 <i class="fa-solid fa-arrow-up-right-from-square"></i>
-                        </a>
+                        <span><i class="fa-solid fa-shield-halved text-emerald-600 mr-1"></i> 受保護教案視窗</span>
                     </div>
-                    <div id="pdfViewerContainer" class="flex-grow w-full bg-slate-800 flex items-center justify-center relative">
-                        <iframe id="pdfIframe" src="" class="w-full h-full border-0"></iframe>
+                    <div id="pdfViewerContainer" class="flex-grow w-full bg-slate-800 flex items-center justify-center relative overflow-hidden">
+                        <div class="absolute inset-0 bg-transparent z-10 pointer-events-auto" oncontextmenu="return false;"></div>
+                        <iframe id="pdfIframe" src="" class="w-full h-full border-0 pointer-events-none"></iframe>
                     </div>
                 </div>
 
-                <!-- 右側 30% 留言區 -->
                 <div class="w-full md:w-[35%] lg:w-[30%] bg-white flex flex-col h-1/2 md:h-full">
                     <div class="p-3 bg-slate-50 border-b border-slate-200 font-bold text-slate-700 text-sm flex justify-between items-center">
                         <span><i class="fa-solid fa-comments text-emerald-600 mr-1"></i> 講師回饋討論區</span>
@@ -128,14 +160,14 @@
                     <div class="p-3 border-t border-slate-200 bg-slate-50 shrink-0">
                         <div id="lockWarningNotice" class="hidden mb-2 p-2 bg-amber-100 border border-amber-300 text-amber-800 text-xs rounded flex items-center justify-between">
                             <span>⚠️ 此教案已被 PM 鎖定，無法新增回饋。</span>
-                            <button onclick="copyDraft()" class="text-amber-900 underline font-bold">複製我的草稿</button>
                         </div>
 
                         <form id="commentForm" onsubmit="handleAddComment(event)" class="space-y-2">
+                            <input type="hidden" id="editingCommentId" value="">
                             <div class="flex gap-2">
-                                <input type="text" id="commentAuthor" required placeholder="您的姓名/講師名稱" 
+                                <input type="text" id="commentAuthor" required placeholder="您的姓名/講師名稱 *" 
                                     class="w-1/2 text-xs border border-slate-300 rounded px-2 py-1.5 focus:ring-1 focus:ring-emerald-500 outline-none">
-                                <select id="commentCategory" onchange="updatePlaceholder()" 
+                                <select id="commentCategory" 
                                     class="w-1/2 text-xs border border-slate-300 rounded px-1 py-1.5 focus:ring-1 focus:ring-emerald-500 outline-none bg-white">
                                     <option value="[⚖️ 法條/時事更新]">[⚖️ 法條/時事]</option>
                                     <option value="[🔢 數字/算式校正]">[🔢 數字/算式]</option>
@@ -143,16 +175,19 @@
                                     <option value="[💡 講義內容補充]">[💡 講義補充]</option>
                                 </select>
                             </div>
-                            <div class="flex gap-2">
-                                <input type="text" id="commentPage" placeholder="建議頁數/章節 (選填)" 
-                                    class="w-full text-xs border border-slate-300 rounded px-2 py-1 focus:ring-1 focus:ring-emerald-500 outline-none">
-                            </div>
+                            <input type="text" id="commentPage" placeholder="建議頁數/章節 (選填)" 
+                                class="w-full text-xs border border-slate-300 rounded px-2 py-1 focus:ring-1 focus:ring-emerald-500 outline-none">
                             <textarea id="commentContent" required rows="2" placeholder="請輸入建議內容..." 
                                 class="w-full text-xs border border-slate-300 rounded p-2 focus:ring-1 focus:ring-emerald-500 outline-none resize-none"></textarea>
-                            <button type="submit" id="submitCommentBtn" 
-                                class="w-full bg-emerald-700 hover:bg-emerald-600 text-white font-bold py-1.5 rounded text-xs transition flex items-center justify-center gap-1">
-                                <i class="fa-solid fa-paper-plane"></i> 發布建議回饋
-                            </button>
+                            <div class="flex gap-2">
+                                <button type="button" id="cancelEditCommentBtn" onclick="cancelCommentEdit()" class="hidden w-1/3 bg-slate-300 hover:bg-slate-400 text-slate-700 font-bold py-1.5 rounded text-xs transition">
+                                    取消
+                                </button>
+                                <button type="submit" id="submitCommentBtn" 
+                                    class="flex-grow bg-emerald-700 hover:bg-emerald-600 text-white font-bold py-1.5 rounded text-xs transition flex items-center justify-center gap-1">
+                                    <i class="fa-solid fa-paper-plane"></i> <span id="submitCommentBtnText">發布建議回饋</span>
+                                </button>
+                            </div>
                         </form>
                     </div>
                 </div>
@@ -160,7 +195,7 @@
         </div>
     </div>
 
-    <!-- 2. 新增/編輯教案 Modal -->
+    <!-- 新增/編輯教案 Modal -->
     <div id="addLessonModal" class="fixed inset-0 bg-slate-900/60 z-50 hidden flex items-center justify-center p-4">
         <div class="bg-white rounded-xl shadow-xl w-full max-w-md p-6">
             <h3 id="lessonModalTitle" class="text-lg font-bold text-slate-800 mb-4 flex items-center gap-2">
@@ -175,18 +210,16 @@
                 </div>
                 <div>
                     <label class="block text-xs font-bold text-slate-600 mb-1">教案分類 *</label>
-                    <select id="newCategory" class="w-full border border-slate-300 rounded p-2 text-sm focus:ring-2 focus:ring-emerald-500 outline-none bg-white">
-                        <!-- 動態帶入分類選項 -->
-                    </select>
+                    <select id="newCategory" class="w-full border border-slate-300 rounded p-2 text-sm focus:ring-2 focus:ring-emerald-500 outline-none bg-white"></select>
                 </div>
                 <div>
                     <label class="block text-xs font-bold text-slate-600 mb-1">教案預覽與檔案連結 (URL) *</label>
-                    <input type="url" id="newFileUrl" required placeholder="https://... (支持 PDF、Google Drive、Canva 連結)" 
+                    <input type="url" id="newFileUrl" required placeholder="https://..." 
                         class="w-full border border-slate-300 rounded p-2 text-sm focus:ring-2 focus:ring-emerald-500 outline-none">
                 </div>
                 <div>
                     <label class="block text-xs font-bold text-slate-600 mb-1">教案摘要說明</label>
-                    <textarea id="newDescription" rows="3" placeholder="簡述本教案的核心教學目標與適用對象..." 
+                    <textarea id="newDescription" rows="3" placeholder="簡述本教案的核心教學目標..." 
                         class="w-full border border-slate-300 rounded p-2 text-sm focus:ring-2 focus:ring-emerald-500 outline-none resize-none"></textarea>
                 </div>
                 <div class="flex justify-end gap-2 pt-2">
@@ -197,10 +230,9 @@
         </div>
     </div>
 
-    <!-- JavaScript 邏輯控制器 -->
+    <!-- JS 業務邏輯 -->
     <script>
         const sampleCategories = ['所得稅', '房地產稅', '財富傳承', '營業稅'];
-
         const sampleLessons = [
             {
                 id: 'tax_001',
@@ -288,48 +320,77 @@
             }
         ];
 
-        let categories = JSON.parse(localStorage.getItem('estate_categories')) || sampleCategories;
-        let lessons = JSON.parse(localStorage.getItem('estate_lessons')) || sampleLessons;
+        let categories = sampleCategories;
+        let lessons = sampleLessons;
+        let pmPassword = localStorage.getItem('estate_pm_password') || 'pm1234';
         let isPMMode = false;
         let currentFilterCat = 'all';
         let activeLessonId = null;
 
-        window.onload = () => {
-            saveData();
-            renderCategories();
-            renderCards();
-            const savedName = localStorage.getItem('estate_user_name');
-            if (savedName) {
-                document.getElementById('commentAuthor').value = savedName;
+        // 監聽鍵盤 PrintScreen
+        window.addEventListener('keydown', (e) => {
+            if (e.key === 'PrintScreen' || (e.ctrlKey && e.key === 'p')) {
+                alert('⚠️ 本系統教案受保護，禁止截圖與列印。');
+                navigator.clipboard.writeText('');
             }
-        };
+        });
 
-        function saveData() {
-            localStorage.setItem('estate_lessons', JSON.stringify(lessons));
-            localStorage.setItem('estate_categories', JSON.stringify(categories));
+        // 雲端即時連線監聽
+        window.addEventListener('load', () => {
+            const savedName = localStorage.getItem('estate_user_name');
+            if (savedName) document.getElementById('commentAuthor').value = savedName;
+
+            // 啟用 Firebase 即時訂閱
+            const checkFbTimer = setInterval(() => {
+                if (window.fbDb) {
+                    clearInterval(checkFbTimer);
+                    initFirebaseListener();
+                }
+            }, 300);
+        });
+
+        function initFirebaseListener() {
+            const lessonsRef = window.fbRef(window.fbDb, 'estate_lessons');
+            const categoriesRef = window.fbRef(window.fbDb, 'estate_categories');
+
+            // 實時接收雲端更新
+            window.fbOnValue(lessonsRef, (snapshot) => {
+                const data = snapshot.val();
+                if (data) {
+                    lessons = data;
+                } else {
+                    // 若雲端為空，初始化預設值
+                    saveToCloud();
+                }
+                renderCards();
+                if (activeLessonId) {
+                    const currentL = lessons.find(l => l.id === activeLessonId);
+                    if (currentL) renderComments(currentL);
+                }
+            });
+
+            window.fbOnValue(categoriesRef, (snapshot) => {
+                const data = snapshot.val();
+                if (data) categories = data;
+                renderCategories();
+            });
         }
 
-        function resetData() {
-            localStorage.removeItem('estate_lessons');
-            localStorage.removeItem('estate_categories');
-            categories = JSON.parse(JSON.stringify(sampleCategories));
-            lessons = JSON.parse(JSON.stringify(sampleLessons));
-            saveData();
-            renderCategories();
-            renderCards();
-            alert('已成功同步 GitHub 最新教案資料！');
+        function saveToCloud() {
+            if (!window.fbDb) return;
+            window.fbSet(window.fbRef(window.fbDb, 'estate_lessons'), lessons);
+            window.fbSet(window.fbRef(window.fbDb, 'estate_categories'), categories);
         }
 
         function renderCategories() {
             const container = document.getElementById('categoryContainer');
             container.innerHTML = `
-                <button onclick="filterCategory('all')" class="cat-filter-btn ${currentFilterCat === 'all' ? 'bg-emerald-100 text-emerald-800 font-medium border-emerald-300' : 'bg-slate-100 text-slate-600'} px-3 py-1 rounded-full text-xs transition border shrink-0" data-cat="all">全部教案</button>
+                <button onclick="filterCategory('all')" class="cat-filter-btn ${currentFilterCat === 'all' ? 'bg-emerald-100 text-emerald-800 font-medium border-emerald-300' : 'bg-slate-100 text-slate-600'} px-3 py-1 rounded-full text-xs transition border shrink-0">全部教案</button>
             `;
 
             categories.forEach(cat => {
                 const wrapper = document.createElement('div');
                 wrapper.className = "inline-flex items-center shrink-0";
-
                 const isActive = currentFilterCat === cat;
                 const activeStyle = isActive ? 'bg-emerald-100 text-emerald-800 font-medium border-emerald-300' : 'bg-slate-100 text-slate-600 hover:bg-slate-200';
 
@@ -360,9 +421,7 @@
             if (confirm(`確定要刪除「${catName}」分類嗎？`)) {
                 categories = categories.filter(c => c !== catName);
                 if (currentFilterCat === catName) currentFilterCat = 'all';
-                saveData();
-                renderCategories();
-                renderCards();
+                saveToCloud();
             }
         }
 
@@ -372,8 +431,7 @@
                 const trimmed = newCat.trim();
                 if (!categories.includes(trimmed)) {
                     categories.push(trimmed);
-                    saveData();
-                    renderCategories();
+                    saveToCloud();
                 } else {
                     alert('此分類已經存在！');
                 }
@@ -382,24 +440,40 @@
 
         function togglePMMode() {
             if (!isPMMode) {
-                const pass = prompt('請輸入 PM 管理員通行密碼 (預設: pm1234)：');
-                if (pass === 'pm1234') {
+                const pass = prompt('請輸入 PM 管理員通行密碼：');
+                if (pass === pmPassword) {
                     isPMMode = true;
                     document.getElementById('pmStatusText').innerText = 'PM 模式：開啟中';
                     document.getElementById('pmModeBtn').classList.replace('bg-emerald-700', 'bg-amber-600');
                     document.getElementById('addCatBtn').classList.remove('hidden');
+                    document.getElementById('changePmPassBtn').classList.remove('hidden');
                 } else if (pass !== null) {
-                    alert('密碼錯誤！請輸入 pm1234');
+                    alert('密碼錯誤！');
                 }
             } else {
                 isPMMode = false;
                 document.getElementById('pmStatusText').innerText = 'PM 模式：關閉';
                 document.getElementById('pmModeBtn').classList.replace('bg-amber-600', 'bg-emerald-700');
                 document.getElementById('addCatBtn').classList.add('hidden');
+                document.getElementById('changePmPassBtn').classList.add('hidden');
             }
             renderCategories();
             renderCards();
             if (activeLessonId) openSplitModal(activeLessonId);
+        }
+
+        function changePMPassword() {
+            const current = prompt('請輸入舊的 PM 密碼：');
+            if (current === pmPassword) {
+                const newPass = prompt('請輸入新設定的 PM 密碼：');
+                if (newPass && newPass.trim() !== '') {
+                    pmPassword = newPass.trim();
+                    localStorage.setItem('estate_pm_password', pmPassword);
+                    alert('PM 管理密碼已成功修改！');
+                }
+            } else if (current !== null) {
+                alert('舊密碼驗證失敗！');
+            }
         }
 
         function renderCards() {
@@ -437,18 +511,12 @@
                     pmControlHTML = `
                         <div class="bg-amber-50 p-2.5 border-t border-amber-200 flex justify-between items-center text-xs gap-1">
                             <div class="flex gap-1">
-                                <button onclick="openEditLessonModal('${lesson.id}')" class="px-2.5 py-1 bg-blue-600 text-white rounded hover:bg-blue-700 font-bold flex items-center gap-1 shadow-sm">
-                                    <i class="fa-solid fa-pen"></i> 編輯
-                                </button>
-                                <button onclick="deleteLesson('${lesson.id}')" class="px-2.5 py-1 bg-rose-600 text-white rounded hover:bg-rose-700 font-bold flex items-center gap-1 shadow-sm">
-                                    <i class="fa-solid fa-trash"></i> 刪除
-                                </button>
+                                <button onclick="openEditLessonModal('${lesson.id}')" class="px-2.5 py-1 bg-blue-600 text-white rounded font-bold shadow-sm"><i class="fa-solid fa-pen"></i> 編輯</button>
+                                <button onclick="deleteLesson('${lesson.id}')" class="px-2.5 py-1 bg-rose-600 text-white rounded font-bold shadow-sm"><i class="fa-solid fa-trash"></i> 刪除</button>
                             </div>
                             <div class="flex gap-1 items-center">
-                                <button onclick="toggleLock('${lesson.id}')" class="px-2 py-1 bg-white border border-amber-300 text-slate-700 rounded hover:bg-amber-100 font-medium">
-                                    ${lesson.isLocked ? '🔓 解鎖' : '🔒 鎖定'}
-                                </button>
-                                <select onchange="changeStatus('${lesson.id}', this.value)" class="bg-white border border-amber-300 rounded px-1.5 py-1 text-slate-700 font-medium">
+                                <button onclick="toggleLock('${lesson.id}')" class="px-2 py-1 bg-white border border-amber-300 rounded font-medium">${lesson.isLocked ? '🔓 解鎖' : '🔒 鎖定'}</button>
+                                <select onchange="changeStatus('${lesson.id}', this.value)" class="bg-white border border-amber-300 rounded px-1.5 py-1 font-medium">
                                     <option value="徵求回饋中" ${lesson.status==='徵求回饋中'?'selected':''}>徵求中</option>
                                     <option value="修改中" ${lesson.status==='修改中'?'selected':''}>修改中</option>
                                     <option value="已完稿" ${lesson.status==='已完稿'?'selected':''}>已完稿</option>
@@ -461,35 +529,25 @@
                 card.innerHTML = `
                     <div class="p-5">
                         <div class="flex justify-between items-start gap-2 mb-2">
-                            <span class="text-xs font-bold bg-slate-100 text-slate-600 px-2.5 py-1 rounded-full border border-slate-200">
-                                ${lesson.category}
-                            </span>
+                            <span class="text-xs font-bold bg-slate-100 text-slate-600 px-2.5 py-1 rounded-full border border-slate-200">${lesson.category}</span>
                             <div class="flex items-center gap-1">
                                 ${lesson.isLocked ? '<span class="text-xs bg-rose-100 text-rose-700 px-2 py-0.5 rounded font-bold"><i class="fa-solid fa-lock"></i> 鎖定</span>' : ''}
                                 <span class="text-xs px-2.5 py-1 rounded-full border font-bold ${statusBg}">${lesson.status}</span>
                             </div>
                         </div>
-
-                        <h3 class="font-bold text-slate-800 text-base mb-2 hover:text-emerald-700 cursor-pointer" onclick="openSplitModal('${lesson.id}')">
-                            ${lesson.title}
-                        </h3>
+                        <h3 class="font-bold text-slate-800 text-base mb-2 hover:text-emerald-700 cursor-pointer" onclick="openSplitModal('${lesson.id}')">${lesson.title}</h3>
                         <p class="text-xs text-slate-500 line-clamp-2 mb-4">${lesson.description}</p>
-
                         <div class="text-xs text-slate-400 flex items-center justify-between border-t border-slate-100 pt-3">
                             <span>建立者：${lesson.createdBy}</span>
                             <span>${lesson.createdAt}</span>
                         </div>
                     </div>
-
                     <div class="bg-slate-50 px-5 py-3 border-t border-slate-100 flex items-center justify-between">
                         <button onclick="openSplitModal('${lesson.id}')" class="text-xs text-emerald-700 font-bold hover:text-emerald-900 flex items-center gap-1">
                             <i class="fa-solid fa-book-open"></i> 預覽與留言
                         </button>
-                        <span class="text-xs text-slate-500 font-medium bg-slate-200/60 px-2 py-0.5 rounded-full">
-                            💬 ${commentCount} 則建議
-                        </span>
+                        <span class="text-xs text-slate-500 font-medium bg-slate-200/60 px-2 py-0.5 rounded-full">💬 ${commentCount} 則建議</span>
                     </div>
-
                     ${pmControlHTML}
                 `;
                 grid.appendChild(card);
@@ -499,13 +557,11 @@
         function openEditLessonModal(id) {
             const lesson = lessons.find(l => l.id === id);
             if (!lesson) return;
-
             document.getElementById('editLessonId').value = lesson.id;
             document.getElementById('newTitle').value = lesson.title;
             document.getElementById('newCategory').value = lesson.category;
             document.getElementById('newFileUrl').value = lesson.fileUrl;
             document.getElementById('newDescription').value = lesson.description;
-            
             document.getElementById('lessonModalTitle').innerHTML = '<i class="fa-solid fa-pen-to-square text-blue-600"></i> 編輯教案資料';
             document.getElementById('addLessonModal').classList.remove('hidden');
         }
@@ -513,8 +569,7 @@
         function deleteLesson(id) {
             if (confirm('確定要徹底刪除此教案嗎？')) {
                 lessons = lessons.filter(l => l.id !== id);
-                saveData();
-                renderCards();
+                saveToCloud();
             }
         }
 
@@ -550,8 +605,7 @@
                 lessons.unshift(newLesson);
             }
 
-            saveData();
-            renderCards();
+            saveToCloud();
             closeAddLessonModal();
         }
 
@@ -573,7 +627,6 @@
 
             document.getElementById('modalTitle').innerText = lesson.title;
             document.getElementById('modalCatTag').innerText = lesson.category;
-            document.getElementById('modalExternalLink').href = lesson.fileUrl;
             document.getElementById('pdfIframe').src = lesson.fileUrl;
 
             const lockBadge = document.getElementById('modalLockBadge');
@@ -590,6 +643,7 @@
                 lockNotice.classList.add('hidden');
             }
 
+            cancelCommentEdit();
             renderComments(lesson);
             document.getElementById('splitViewerModal').classList.remove('hidden');
         }
@@ -613,22 +667,27 @@
                 return;
             }
 
+            const currentUser = (document.getElementById('commentAuthor').value || '').trim();
+
             comments.forEach(c => {
                 const div = document.createElement('div');
                 div.className = `p-3 rounded-lg border text-xs space-y-1 ${c.isAdopted ? 'bg-amber-50/80 border-amber-300' : 'bg-slate-50 border-slate-200'}`;
-                
+                const canEdit = isPMMode || (currentUser && currentUser === c.author);
+
                 div.innerHTML = `
                     <div class="flex justify-between items-center">
                         <span class="font-bold text-slate-700">${c.author}</span>
-                        <span class="text-[10px] text-slate-400">${c.createdAt}</span>
+                        <div class="flex items-center gap-2">
+                            <span class="text-[10px] text-slate-400">${c.createdAt}</span>
+                            ${canEdit ? `<button onclick="startEditComment('${c.id}')" class="text-[10px] text-blue-600 hover:underline font-bold"><i class="fa-solid fa-pen"></i> 編輯</button>` : ''}
+                        </div>
                     </div>
                     <div class="flex flex-wrap gap-1 my-1">
                         <span class="bg-emerald-100 text-emerald-800 px-1.5 py-0.5 rounded text-[10px] font-medium">${c.category}</span>
                         ${c.page ? `<span class="bg-slate-200 text-slate-700 px-1.5 py-0.5 rounded text-[10px]">${c.page}</span>` : ''}
                         ${c.isAdopted ? `<span class="bg-amber-500 text-white font-bold px-1.5 py-0.5 rounded text-[10px]"><i class="fa-solid fa-award"></i> 已採納至 V2</span>` : ''}
                     </div>
-                    <p class="text-slate-600 leading-relaxed">${c.content}</p>
-                    
+                    <p class="text-slate-600 leading-relaxed whitespace-pre-wrap">${c.content}</p>
                     ${isPMMode ? `
                         <div class="pt-1 flex justify-end">
                             <button onclick="toggleAdoptComment('${c.id}')" class="text-[10px] text-amber-800 underline font-bold">
@@ -641,13 +700,37 @@
             });
         }
 
+        function startEditComment(commentId) {
+            const lesson = lessons.find(l => l.id === activeLessonId);
+            if (!lesson) return;
+            const comment = (lesson.comments || []).find(c => c.id === commentId);
+            if (!comment) return;
+
+            document.getElementById('editingCommentId').value = comment.id;
+            document.getElementById('commentAuthor').value = comment.author;
+            document.getElementById('commentCategory').value = comment.category;
+            document.getElementById('commentPage').value = comment.page || '';
+            document.getElementById('commentContent').value = comment.content;
+
+            document.getElementById('submitCommentBtnText').innerText = '儲存修改建議';
+            document.getElementById('cancelEditCommentBtn').classList.remove('hidden');
+        }
+
+        function cancelCommentEdit() {
+            document.getElementById('editingCommentId').value = '';
+            document.getElementById('commentContent').value = '';
+            document.getElementById('commentPage').value = '';
+            document.getElementById('submitCommentBtnText').innerText = '發布建議回饋';
+            document.getElementById('cancelEditCommentBtn').classList.add('hidden');
+        }
+
         function handleAddComment(e) {
             e.preventDefault();
             if (!activeLessonId) return;
 
             const lesson = lessons.find(l => l.id === activeLessonId);
             if (lesson.isLocked) {
-                alert('該教案已被 PM 鎖定，暫無法接收新意見！');
+                alert('該教案已被 PM 鎖定！');
                 return;
             }
 
@@ -655,37 +738,49 @@
             const category = document.getElementById('commentCategory').value;
             const page = document.getElementById('commentPage').value.trim();
             const content = document.getElementById('commentContent').value.trim();
+            const editingId = document.getElementById('editingCommentId').value;
 
-            if (!author || !content) return;
+            if (!author) {
+                alert('請先填寫您的姓名/講師名稱！');
+                document.getElementById('commentAuthor').focus();
+                return;
+            }
 
+            if (!content) return;
             localStorage.setItem('estate_user_name', author);
 
-            const newComment = {
-                id: 'c_' + Date.now(),
-                author,
-                category,
-                page,
-                content,
-                isAdopted: false,
-                createdAt: new Date().toLocaleDateString('zh-TW', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })
-            };
+            if (!lesson.comments) lesson.comments = [];
 
-            lesson.comments.push(newComment);
-            saveData();
-            renderComments(lesson);
-            renderCards();
+            if (editingId) {
+                const comment = lesson.comments.find(c => c.id === editingId);
+                if (comment) {
+                    comment.author = author;
+                    comment.category = category;
+                    comment.page = page;
+                    comment.content = content;
+                }
+            } else {
+                const newComment = {
+                    id: 'c_' + Date.now(),
+                    author,
+                    category,
+                    page,
+                    content,
+                    isAdopted: false,
+                    createdAt: new Date().toLocaleDateString('zh-TW', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })
+                };
+                lesson.comments.push(newComment);
+            }
 
-            document.getElementById('commentContent').value = '';
-            document.getElementById('commentPage').value = '';
+            saveToCloud();
+            cancelCommentEdit();
         }
 
         function toggleLock(id) {
             const lesson = lessons.find(l => l.id === id);
             if (lesson) {
                 lesson.isLocked = !lesson.isLocked;
-                saveData();
-                renderCards();
-                if (activeLessonId === id) openSplitModal(id);
+                saveToCloud();
             }
         }
 
@@ -693,19 +788,17 @@
             const lesson = lessons.find(l => l.id === id);
             if (lesson) {
                 lesson.status = newStatus;
-                saveData();
-                renderCards();
+                saveToCloud();
             }
         }
 
         function toggleAdoptComment(commentId) {
             const lesson = lessons.find(l => l.id === activeLessonId);
-            if (lesson) {
+            if (lesson && lesson.comments) {
                 const comment = lesson.comments.find(c => c.id === commentId);
                 if (comment) {
                     comment.isAdopted = !comment.isAdopted;
-                    saveData();
-                    renderComments(lesson);
+                    saveToCloud();
                 }
             }
         }
@@ -714,24 +807,6 @@
             currentFilterCat = cat;
             renderCategories();
             renderCards();
-        }
-
-        function updatePlaceholder() {
-            const cat = document.getElementById('commentCategory').value;
-            const input = document.getElementById('commentContent');
-            if (cat.includes('數字')) input.placeholder = '請列出正確的算式金額或扣除額數字...';
-            else if (cat.includes('法條')) input.placeholder = '請載明建議新增/更正之賦稅法令字號...';
-            else input.placeholder = '請輸入具體的建言與修改想法...';
-        }
-
-        function copyDraft() {
-            const content = document.getElementById('commentContent').value;
-            if (content) {
-                navigator.clipboard.writeText(content);
-                alert('已將打到一半的草稿複製至剪貼簿！');
-            } else {
-                alert('目前留言框無草稿文字。');
-            }
         }
     </script>
 </body>
