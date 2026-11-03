@@ -354,14 +354,16 @@
             const lessonsRef = window.fbRef(window.fbDb, 'estate_lessons');
             const categoriesRef = window.fbRef(window.fbDb, 'estate_categories');
 
-            // 實時接收雲端更新 (若雲端無資料則自動預填寫入 7 份預設教案)
+            // 實時接收雲端更新 (若雲端無資料或為空物件，自動強制推播寫入 7 份預設教案)
             window.fbOnValue(lessonsRef, (snapshot) => {
                 const data = snapshot.val();
-                if (data && Array.isArray(data) && data.length > 0) {
-                    lessons = data;
+                const hasData = data && (Array.isArray(data) ? data.length > 0 : Object.keys(data).length > 0);
+
+                if (hasData) {
+                    lessons = Array.isArray(data) ? data : Object.values(data);
                 } else {
                     lessons = sampleLessons;
-                    saveToCloud();
+                    saveToCloud(); // 寫入 Firebase
                 }
                 renderCards();
                 if (activeLessonId) {
@@ -372,8 +374,10 @@
 
             window.fbOnValue(categoriesRef, (snapshot) => {
                 const data = snapshot.val();
-                if (data && Array.isArray(data) && data.length > 0) {
-                    categories = data;
+                const hasCategories = data && (Array.isArray(data) ? data.length > 0 : Object.keys(data).length > 0);
+
+                if (hasCategories) {
+                    categories = Array.isArray(data) ? data : Object.values(data);
                 } else {
                     categories = sampleCategories;
                     saveToCloud();
