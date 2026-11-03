@@ -138,14 +138,14 @@
             </div>
 
             <div class="flex flex-col md:flex-row flex-grow overflow-hidden">
-                <!-- 左側 70% 預覽區 (透明防護牆覆蓋) -->
+                <!-- 左側 70% 預覽區 (精準右上方防護罩，保持可自由滑動翻頁) -->
                 <div class="w-full md:w-[65%] lg:w-[70%] bg-slate-200 border-r border-slate-300 flex flex-col h-1/2 md:h-full relative">
                     <div class="bg-slate-300 px-3 py-1.5 text-xs text-slate-600 flex justify-between items-center border-b border-slate-300">
-                        <span><i class="fa-solid fa-shield-halved text-emerald-600 mr-1"></i> 受保護教案視窗 (已關閉另開連結與下載)</span>
+                        <span><i class="fa-solid fa-shield-halved text-emerald-600 mr-1"></i> 受保護教案視窗 (可自由滾動，已屏蔽外鏈按鈕)</span>
                     </div>
                     <div id="pdfViewerContainer" class="flex-grow w-full bg-slate-800 flex items-center justify-center relative overflow-hidden">
-                        <!-- 透明防護牆：阻擋對 iframe 內部所有另開視窗與下載的點擊 -->
-                        <div class="absolute inset-0 bg-transparent z-20" style="pointer-events: auto;" oncontextmenu="return false;"></div>
+                        <!-- 精準遮罩：僅覆蓋右上角的外鏈/下載按鈕區 (寬160px, 高65px)，其餘 95% 區域皆可自由滑動 -->
+                        <div class="absolute top-0 right-0 w-40 h-16 bg-transparent z-20" style="pointer-events: auto;" oncontextmenu="return false;"></div>
                         <iframe id="pdfIframe" src="" class="w-full h-full border-0 relative z-10"></iframe>
                     </div>
                 </div>
