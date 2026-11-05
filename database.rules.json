@@ -1,0 +1,31 @@
+{
+  "rules": {
+    ".read": false,
+    ".write": false,
+    "estate_access": {
+      "$uid": {
+        ".read": "auth != null && auth.uid == $uid",
+        ".write": false
+      }
+    },
+    "estate_lessons": {
+      ".read": "auth != null && (root.child('estate_access').child(auth.uid).val() == 'viewer' || root.child('estate_access').child(auth.uid).val() == 'pm')",
+      ".write": "auth != null && root.child('estate_access').child(auth.uid).val() == 'pm'",
+      "$lesson": {
+        "comments": {
+          "$comment": {
+            ".write": "auth != null && root.child('estate_access').child(auth.uid).val() == 'viewer' && !data.exists() && newData.exists() && data.parent().parent().child('id').exists() && data.parent().parent().child('isArchived').val() != true",
+            ".validate": "(auth != null && root.child('estate_access').child(auth.uid).val() == 'pm') || (newData.hasChildren(['id','author','category','page','content','isAdopted','uid','createdAt']) && newData.child('id').val() == $comment && newData.child('author').isString() && newData.child('author').val().length > 0 && newData.child('author').val().length <= 100 && newData.child('content').isString() && newData.child('content').val().length > 0 && newData.child('content').val().length <= 10000 && newData.child('category').isString() && newData.child('category').val().length <= 100 && newData.child('page').isString() && newData.child('page').val().length <= 100 && newData.child('createdAt').isString() && newData.child('createdAt').val().length <= 100 && newData.child('uid').val() == auth.uid && newData.child('isAdopted').val() == false)",
+            "$other": {
+              ".validate": "(auth != null && root.child('estate_access').child(auth.uid).val() == 'pm') || ($other == 'id' || $other == 'author' || $other == 'category' || $other == 'page' || $other == 'content' || $other == 'isAdopted' || $other == 'uid' || $other == 'createdAt')"
+            }
+          }
+        }
+      }
+    },
+    "estate_categories": {
+      ".read": "auth != null && (root.child('estate_access').child(auth.uid).val() == 'viewer' || root.child('estate_access').child(auth.uid).val() == 'pm')",
+      ".write": "auth != null && root.child('estate_access').child(auth.uid).val() == 'pm'"
+    }
+  }
+}
