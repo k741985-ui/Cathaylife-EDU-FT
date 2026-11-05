@@ -14,8 +14,9 @@
     <!-- Firebase SDK (v9 模組化載入) -->
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.1/firebase-app.js";
-        import { getDatabase, ref, onValue, set, runTransaction } from "https://www.gstatic.com/firebasejs/9.22.1/firebase-database.js";
+        import { getDatabase, ref, onValue, set, get, runTransaction } from "https://www.gstatic.com/firebasejs/9.22.1/firebase-database.js";
 
+        import { getAuth, signInWithEmailAndPassword, onAuthStateChanged, signOut, setPersistence, inMemoryPersistence, sendPasswordResetEmail } from "https://www.gstatic.com/firebasejs/9.22.1/firebase-auth.js";
         const firebaseConfig = {
             apiKey: "AIzaSyAdIAh1uG2RZ2CdV3xqkhCafZ4Vm3wEabM",
             authDomain: "tax-estate-edu.firebaseapp.com",
@@ -36,9 +37,17 @@
         window.fbRef = ref;
         window.fbOnValue = onValue;
         window.fbSet = set;
+        window.fbGet = get;
+        window.fbAuth = getAuth(app);
+        window.fbLogin = signInWithEmailAndPassword;
+        window.fbLogout = signOut;
+        window.fbAuthChanged = onAuthStateChanged;
+        window.fbSetPersistence = () => setPersistence(window.fbAuth, inMemoryPersistence);
+        window.fbResetPassword = sendPasswordResetEmail;
     </script>
 
     <style>
+        [hidden] { display: none !important; }
         body { 
             font-family: 'Noto Sans TC', sans-serif;
             -webkit-user-select: none;
@@ -61,6 +70,22 @@
 </head>
 <body class="bg-slate-100 min-h-screen text-slate-800 flex flex-col" oncontextmenu="return false;">
 
+    <section id="entryGate" class="min-h-screen flex items-center justify-center p-5 bg-emerald-950">
+      <div class="bg-white rounded-2xl p-7 shadow-xl w-full max-w-md">
+        <p class="text-emerald-700 text-sm font-bold mb-2">財稅莊園</p>
+        <h1 id="gateTitle" class="text-2xl font-bold mb-2">教案回饋牆</h1>
+        <p id="gateDescription" class="text-sm text-slate-600 mb-6">請輸入團隊共用密碼，進入後即可瀏覽教案與提出建議。</p>
+        <form id="entryForm" onsubmit="loginToWall(event)" class="space-y-4">
+          <div id="entryEmailGroup" hidden><label for="entryEmail" class="block text-sm mb-1">PM 管理帳號</label><input id="entryEmail" type="email" autocomplete="username" class="w-full border rounded-lg p-3"></div>
+          <div><label for="entryPassword" class="block text-sm mb-1">密碼</label><input id="entryPassword" type="password" autocomplete="current-password" required class="w-full border rounded-lg p-3" placeholder="請輸入密碼"></div>
+          <button id="entrySubmit" type="submit" disabled class="w-full rounded-lg p-3 bg-emerald-800 text-white font-bold disabled:opacity-50">正在準備安全連線…</button>
+        </form>
+        <p id="entryError" role="alert" class="text-sm text-rose-700 mt-3" aria-live="polite"></p>
+        <button type="button" id="entryMode" onclick="switchEntryMode()" class="text-sm text-emerald-800 underline mt-5">PM 管理者登入</button>
+        <p class="text-xs text-slate-500 mt-5">僅供團隊教學討論使用。請勿轉傳密碼；重新整理或離開頁面後需重新輸入。</p>
+      </div>
+    </section>
+    <div id="wallApp" hidden>
     <!-- 頂部導覽列 -->
     <header class="bg-emerald-800 text-white shadow-md sticky top-0 z-30">
         <div class="max-w-7xl mx-auto px-4 py-3 flex flex-wrap justify-between items-center gap-3">
@@ -82,9 +107,10 @@
                     <i class="fa-solid fa-magnifying-glass absolute left-3 top-2.5 text-xs text-emerald-300"></i>
                 </div>
 
+                <button onclick="logoutFromWall()" class="text-xs border rounded-full px-3 py-1.5">登出回到密碼頁</button>
                 <button id="pmModeBtn" onclick="togglePMMode()" class="text-xs md:text-sm bg-emerald-700 hover:bg-emerald-600 px-3 py-1.5 rounded-full border border-emerald-500 transition flex items-center gap-1.5 font-bold">
                     <i class="fa-solid fa-user-gear"></i>
-                    <span id="pmStatusText">PM 模式：關閉</span>
+                    <span id="pmStatusText">PM 管理登入</span>
                 </button>
 
                 <button id="changePmPassBtn" onclick="changePMPassword()" class="hidden text-xs md:text-sm bg-amber-600 hover:bg-amber-500 text-white px-3 py-1.5 rounded-full border border-amber-400 transition flex items-center gap-1 font-bold">
@@ -102,6 +128,7 @@
     <div class="max-w-7xl mx-auto px-4 py-2 text-xs text-slate-600 w-full">
         <p>教案僅供瀏覽，請於討論區留下建議；教案資料由 PM 維護。下載限制需由檔案擁有者於 Google Drive 設定。</p>
         <div class="flex gap-2 flex-wrap mt-2">
+        <label id="importLessonsControl" hidden class="bg-white border rounded px-3 py-2 cursor-pointer">匯入原有教案<input type="file" id="importLessonsFile" accept="application/json,.json" onchange="importLessons(event)" class="hidden"></label>
         <button onclick="exportFeedback()" class="bg-white border rounded px-3 py-2">匯出全部教案回饋 CSV</button>
         <button id="databaseConfigBtn" onclick="configureDatabase()" class="hidden bg-white border rounded px-3 py-2">設定資料庫連線</button>
         </div><p id="connectionMessage" role="status" class="mt-2"></p>
@@ -243,99 +270,13 @@
         </div>
     </div>
 
+    </div>
     <!-- JS 業務邏輯 -->
     <script>
-        const sampleCategories = ['所得稅', '房地產稅', '財富傳承', '營業稅'];
-        const sampleLessons = [
-            {
-                id: 'tax_001',
-                title: '高資專題班教案',
-                category: '財富傳承',
-                description: '01高資產客群案例實戰班~高資產市場分析',
-                fileUrl: 'https://drive.google.com/file/d/1BzIRlXKiosfpKY_jPfeS9nrqgaBJwBFW/preview',
-                status: '徵求回饋中',
-                isLocked: false,
-                createdBy: 'PM管理員',
-                createdAt: '2026-10-27',
-                comments: []
-            },
-            {
-                id: 'tax_002',
-                title: '高資專題班教案',
-                category: '財富傳承',
-                description: '02高資產客群案例實戰班~案例(一)中小企業主',
-                fileUrl: 'https://drive.google.com/file/d/1zR16k0PQGtNpLGD63rli0ighvfVZmJ8t/preview',
-                status: '徵求回饋中',
-                isLocked: false,
-                createdBy: 'PM管理員',
-                createdAt: '2026-10-27',
-                comments: []
-            },
-            {
-                id: 'tax_003',
-                title: '高資專題班教案',
-                category: '財富傳承',
-                description: '03高資產客群案例實戰班~案例(二)名人族群',
-                fileUrl: 'https://drive.google.com/file/d/12bUylyLZsMxYavrXKLJ2UfmP4mt_PICn/preview',
-                status: '徵求回饋中',
-                isLocked: false,
-                createdBy: 'PM管理員',
-                createdAt: '2026-10-27',
-                comments: []
-            },
-            {
-                id: 'tax_004',
-                title: '高資專題班教案',
-                category: '財富傳承',
-                description: '04高資產客群案例實戰班~案例(三)不動產族群',
-                fileUrl: 'https://drive.google.com/file/d/1FW2NG4jwOYsxbVLxWzS4OZDOYU3bjYnH/preview',
-                status: '徵求回饋中',
-                isLocked: false,
-                createdBy: 'PM管理員',
-                createdAt: '2026-10-27',
-                comments: []
-            },
-            {
-                id: 'tax_005',
-                title: '高資專題班教案',
-                category: '財富傳承',
-                description: '05高資產客群案例實戰班~案例(四)高資產世族',
-                fileUrl: 'https://drive.google.com/file/d/1rkUgNLV_1P0T27aTIvMFkbUStLz9bXEk/preview',
-                status: '徵求回饋中',
-                isLocked: false,
-                createdBy: 'PM管理員',
-                createdAt: '2026-10-27',
-                comments: []
-            },
-            {
-                id: 'tax_006',
-                title: '高資專題班教案',
-                category: '財富傳承',
-                description: '06高資產客群案例實戰班~開口話術【夜間作業】',
-                fileUrl: 'https://drive.google.com/file/d/1YQTJPxqlK2zPu_CweBZmsd1EwUafuoqC/preview',
-                status: '徵求回饋中',
-                isLocked: false,
-                createdBy: 'PM管理員',
-                createdAt: '2026-10-27',
-                comments: []
-            },
-            {
-                id: 'tax_007',
-                title: '高資專題班教案',
-                category: '財富傳承',
-                description: '07高資產客群案例實戰班~終極案例挑戰',
-                fileUrl: 'https://drive.google.com/file/d/1NZm8M4ffeqwwL7mnmnFmSrfQLCk6-42C/preview',
-                status: '徵求回饋中',
-                isLocked: false,
-                createdBy: 'PM管理員',
-                createdAt: '2026-10-27',
-                comments: []
-            }
-        ];
-
-        let categories = sampleCategories;
-        let lessons = sampleLessons;
-        let pmPassword = localStorage.getItem('estate_pm_password') || 'pm1234';
+        const sampleCategories = [];
+        const sampleLessons = [];
+        let categories = [];
+        let lessons = [];
         let isPMMode = false;
         let currentFilterCat = 'all';
         let activeLessonId = null;
@@ -359,42 +300,152 @@
             localStorage.setItem('estate_database_url', url.trim());
             location.reload();
         }
+        const TEAM_ACCOUNT_EMAIL = 'board-viewer@tax-estate-edu.firebaseapp.com'; // Account identifier only; never store a password in source.
+        let entryIsPM = false;
+        let currentUser = null;
+        let currentRole = null;
+        let accessVersion = 0;
+        let unsubscribeData = [];
+        let lessonPaths = {};
+        function switchEntryMode() {
+            entryIsPM = !entryIsPM;
+            document.getElementById('entryEmailGroup').hidden = !entryIsPM;
+            document.getElementById('entryEmail').required = entryIsPM;
+            document.getElementById('entryMode').textContent = entryIsPM ? '返回團隊密碼登入' : 'PM 管理者登入';
+            document.getElementById('gateDescription').textContent = entryIsPM ? '請使用獲授權的 PM 帳號與密碼登入。' : '請輸入團隊共用密碼，進入後即可瀏覽教案與提出建議。';
+            document.getElementById('entryPassword').value = '';
+            document.getElementById('entryError').textContent = '';
+        }
+        function clearWall() {
+            unsubscribeData.forEach(fn => fn()); unsubscribeData = [];
+            currentUser = null; currentRole = null; isPMMode = false; cloudReady = false;
+            lessons = []; categories = []; baselineLessons = []; baselineCategories = []; lessonPaths = {};
+            activeLessonId = null;
+            document.getElementById('wallApp').hidden = true;
+            document.getElementById('entryGate').hidden = false;
+            document.getElementById('cardGrid').innerHTML = '';
+            document.getElementById('categoryContainer').innerHTML = '';
+            document.getElementById('modalCommentsList').innerHTML = '';
+            document.getElementById('pdfIframe').src = '';
+            document.getElementById('splitViewerModal').classList.add('hidden');
+            document.getElementById('addLessonModal').classList.add('hidden');
+            document.getElementById('commentContent').value = '';
+            document.getElementById('entryPassword').value = '';
+        }
+        function updateRoleControls() {
+            for (const id of ['addLessonBtn','databaseConfigBtn','addCatBtn','changePmPassBtn']) document.getElementById(id).classList.toggle('hidden', !isPMMode);
+            document.getElementById('importLessonsControl').hidden = !isPMMode;
+            document.getElementById('pmStatusText').textContent = isPMMode ? 'PM 管理：已登入' : '切換 PM 管理帳號';
+        }
+        async function loginToWall(event) {
+            event.preventDefault();
+            const button = document.getElementById('entrySubmit');
+            const errorBox = document.getElementById('entryError');
+            let password = document.getElementById('entryPassword').value;
+            if (!password || !window.fbAuth) return;
+            const email = entryIsPM ? document.getElementById('entryEmail').value.trim() : TEAM_ACCOUNT_EMAIL;
+            button.disabled = true; button.textContent = '正在驗證…'; errorBox.textContent = '';
+            try { await window.fbLogin(window.fbAuth, email, password); }
+            catch (error) {
+                const messages = {'auth/operation-not-allowed':'尚未啟用電子郵件／密碼登入，請 PM 完成 Firebase 設定。','auth/too-many-requests':'嘗試次數較多，請稍後再試。','auth/network-request-failed':'連線失敗，請檢查網路後再試。'};
+                errorBox.textContent = messages[error.code] || '密碼不正確，或帳號尚未設定完成。請向 PM 確認。';
+            } finally {
+                password = ''; document.getElementById('entryPassword').value = '';
+                button.disabled = false; button.textContent = '進入教案回饋牆';
+            }
+        }
+        async function logoutFromWall() {
+            accessVersion++; clearWall();
+            try { await window.fbLogout(window.fbAuth); }
+            catch { document.getElementById('entryError').textContent = '登出未完成，請關閉此頁。'; }
+        }
+        async function handleAuthChange(user) {
+            const version = ++accessVersion;
+            clearWall();
+            if (!user) return;
+            try {
+                const snapshot = await window.fbGet(window.fbRef(window.fbDb, 'estate_access/' + user.uid));
+                if (version !== accessVersion) return;
+                const role = snapshot.val();
+                if (role !== 'viewer' && role !== 'pm') throw new Error('not-authorized');
+                currentUser = user; currentRole = role; isPMMode = role === 'pm';
+                updateRoleControls();
+                document.getElementById('entryGate').hidden = true;
+                document.getElementById('wallApp').hidden = false;
+                syncMessage('驗證成功，正在載入教案…');
+                initFirebaseListener();
+            } catch {
+                if (version !== accessVersion) return;
+                await logoutFromWall();
+                document.getElementById('entryError').textContent = '帳號尚未獲授權，或資料庫規則尚未設定。請 PM 完成設定後再試。';
+            }
+        }
         window.addEventListener('load', () => {
             const savedName = localStorage.getItem('estate_user_name');
             if (savedName) document.getElementById('commentAuthor').value = savedName;
-            renderCategories(); renderCards();
-            syncMessage('正在連線；先顯示七份預設教案');
             let attempts = 0;
-            const timer = setInterval(() => {
-                if (window.fbDb) { clearInterval(timer); initFirebaseListener(); }
-                else if (++attempts >= 25 || window.fbInitError) {
-                    clearInterval(timer); syncMessage('雲端尚未連線，僅供預覽。' + (window.fbInitError || ''), true);
+            const timer = setInterval(async () => {
+                if (window.fbDb && window.fbAuth) {
+                    clearInterval(timer);
+                    try {
+                        await window.fbSetPersistence();
+                        window.fbAuthChanged(window.fbAuth, handleAuthChange);
+                        document.getElementById('entrySubmit').disabled = false;
+                        document.getElementById('entrySubmit').textContent = '進入教案回饋牆';
+                    } catch { document.getElementById('entryError').textContent = '無法啟動安全登入，請重新整理後再試。'; }
+                } else if (++attempts >= 40 || window.fbInitError) {
+                    clearInterval(timer);
+                    document.getElementById('entryError').textContent = '無法連線至登入服務，請檢查網路後重新整理。';
                 }
             }, 300);
         });
+        async function importLessons(event) {
+            if (!isPMMode || !cloudReady) return;
+            const file = event.target.files[0]; if (!file) return;
+            try {
+                if (file.size > 2000000) throw new Error('檔案過大');
+                const data = JSON.parse(await file.text());
+                const incoming = asList(data.estate_lessons || data);
+                if (!incoming.length || incoming.some(l => !/^tax_[a-zA-Z0-9_-]+$/.test(l.id) || !l.title || !/^https:\/\/drive\.google\.com\/file\/d\/[a-zA-Z0-9_-]+\/preview$/.test(l.fileUrl))) throw new Error('教案格式不正確');
+                await window.fbTransaction(window.fbRef(window.fbDb,'estate_lessons'), current => {
+                    const remote = asList(current);
+                    for (const lesson of incoming) if (!remote.some(l => l.id === lesson.id)) remote.push(lesson);
+                    return remote;
+                }, {applyLocally:false});
+                if (data.estate_categories) await window.fbTransaction(window.fbRef(window.fbDb,'estate_categories'), current => [...new Set([...asList(current), ...asList(data.estate_categories)])], {applyLocally:false});
+                syncMessage('匯入完成；保留雲端已有教案與留言');
+            } catch (error) { alert('匯入失敗：' + error.message); }
+            finally { event.target.value = ''; }
+        }
         function initFirebaseListener() {
+            if (!currentUser || !currentRole) return;
+            const version = accessVersion;
             let lessonsLoaded = false, categoriesLoaded = false;
-            const fail = error => { cloudReady = false; syncMessage('雲端連線失敗：' + error.message, true); };
+            const fail = error => { if (version !== accessVersion) return; logoutFromWall().then(() => { document.getElementById('entryError').textContent = '無法讀取資料，請 PM 確認存取權限。'; }); };
             const ready = () => {
                 cloudReady = lessonsLoaded && categoriesLoaded;
                 if (cloudReady) syncMessage('雲端資料已載入');
             };
-            window.fbOnValue(window.fbRef(window.fbDb, 'estate_lessons'), snapshot => {
+            unsubscribeData.push(window.fbOnValue(window.fbRef(window.fbDb, 'estate_lessons'), snapshot => {
+                if (version !== accessVersion) return;
+                lessonPaths = Object.fromEntries(Object.entries(snapshot.val() || {}).filter(([,v]) => v && v.id).map(([key,v]) => [v.id,key]));
                 const remote = asList(snapshot.val());
                 baselineLessons = clone(remote);
                 // 預設教案補入畫面，不覆蓋雲端已有的教案與留言。
                 lessons = remote.concat(sampleLessons.filter(sample => !remote.some(item => item.id === sample.id))).map(item => ({...item, comments: asList(item.comments)}));
                 lessonsLoaded = true; renderCards(); ready();
                 if (activeLessonId) { const item = lessons.find(l => l.id === activeLessonId); if (item) renderComments(item); }
-            }, fail);
-            window.fbOnValue(window.fbRef(window.fbDb, 'estate_categories'), snapshot => {
+            }, fail));
+            unsubscribeData.push(window.fbOnValue(window.fbRef(window.fbDb, 'estate_categories'), snapshot => {
+                if (version !== accessVersion) return;
                 baselineCategories = asList(snapshot.val());
                 categories = [...new Set([...(snapshot.val() === null ? sampleCategories : baselineCategories), ...lessons.filter(l => !l.isArchived).map(l => l.category)])];
                 categoriesLoaded = true; renderCategories(); ready();
-            }, fail);
-            setTimeout(() => { if (!cloudReady) syncMessage('雲端讀取尚未完成，請檢查連線或設定資料庫網址', true); }, 10000);
+            }, fail));
+            setTimeout(() => { if (version === accessVersion && !cloudReady) syncMessage('雲端讀取尚未完成，請檢查連線或設定資料庫網址', true); }, 10000);
         }
         async function saveToCloud() {
+            if (!currentUser || !isPMMode) return false;
             renderCategories(); renderCards();
             if (!cloudReady || !window.fbDb) { syncMessage('尚未連線，無法儲存', true); return false; }
             const desired = clone(lessons), before = clone(baselineLessons);
@@ -429,6 +480,7 @@
             } catch (error) { syncMessage('儲存失敗：' + error.message, true); return false; }
         }
         function exportFeedback(id) {
+            if (!currentUser || !cloudReady) return alert('請先登入並等待資料載入。');
             const rows = [['教案名稱','教案摘要','教案分類','教案狀態','講師姓名','建議類型','頁數或章節','建議內容','採納狀態','留言時間']];
             for (const lesson of lessons.filter(l => !l.isArchived && (!id || l.id === id))) {
                 const comments = asList(lesson.comments);
@@ -499,44 +551,15 @@
             }
         }
 
-        function togglePMMode() {
-            if (!isPMMode) {
-                const pass = prompt('請輸入 PM 管理員通行密碼：');
-                if (pass === pmPassword) {
-                    isPMMode = true;
-                    document.getElementById('pmStatusText').innerText = 'PM 模式：開啟中';
-                    document.getElementById('pmModeBtn').classList.replace('bg-emerald-700', 'bg-amber-600');
-                    document.getElementById('addCatBtn').classList.remove('hidden');
-                    document.getElementById('changePmPassBtn').classList.remove('hidden');
-                } else if (pass !== null) {
-                    alert('密碼錯誤！');
-                }
-            } else {
-                isPMMode = false;
-                document.getElementById('pmStatusText').innerText = 'PM 模式：關閉';
-                document.getElementById('pmModeBtn').classList.replace('bg-amber-600', 'bg-emerald-700');
-                document.getElementById('addCatBtn').classList.add('hidden');
-                document.getElementById('changePmPassBtn').classList.add('hidden');
-            }
-            document.getElementById('addLessonBtn').classList.toggle('hidden', !isPMMode);
-            document.getElementById('databaseConfigBtn').classList.toggle('hidden', !isPMMode);
-            renderCategories();
-            renderCards();
-            if (activeLessonId) openSplitModal(activeLessonId);
+        async function togglePMMode() {
+            if (isPMMode) return;
+            await logoutFromWall();
+            if (!entryIsPM) switchEntryMode();
         }
-
-        function changePMPassword() {
-            const current = prompt('請輸入舊的 PM 密碼：');
-            if (current === pmPassword) {
-                const newPass = prompt('請輸入新設定的 PM 密碼：');
-                if (newPass && newPass.trim() !== '') {
-                    pmPassword = newPass.trim();
-                    localStorage.setItem('estate_pm_password', pmPassword);
-                    alert('PM 管理密碼已成功修改！');
-                }
-            } else if (current !== null) {
-                alert('舊密碼驗證失敗！');
-            }
+        async function changePMPassword() {
+            if (!isPMMode || !currentUser?.email) return;
+            try { await window.fbResetPassword(window.fbAuth, currentUser.email); alert('已寄出密碼重設信，請至管理帳號信箱完成設定。'); }
+            catch { alert('無法寄送，請稍後再試。'); }
         }
 
         function renderCards() {
@@ -554,7 +577,7 @@
             if (filtered.length === 0) {
                 grid.innerHTML = `<div class="col-span-full py-12 text-center text-slate-400">
                     <i class="fa-regular fa-folder-open text-4xl mb-2"></i>
-                    <p>沒有找到相符的教案內容</p>
+                    <p>目前沒有可顯示的教案；若尚未匯入，請 PM 登入後匯入原有教案</p>
                 </div>`;
                 return;
             }
@@ -802,9 +825,9 @@
             if (!activeLessonId) return;
             if (!cloudReady) return alert('雲端尚未連線，請稍後再送出回饋。');
 
+            if (!currentUser) return;
             const lesson = lessons.find(l => l.id === activeLessonId);
-
-
+            if (!lesson) return;
             const author = document.getElementById('commentAuthor').value.trim();
             const category = document.getElementById('commentCategory').value;
             const page = document.getElementById('commentPage').value.trim();
@@ -820,31 +843,25 @@
             if (!content) return;
             localStorage.setItem('estate_user_name', author);
 
-            if (!lesson.comments) lesson.comments = [];
-
+            const lessonPath = lessonPaths[lesson.id];
+            if (lessonPath === undefined) return alert('教案尚未儲存至雲端，請先通知 PM 匯入。');
             if (editingId) {
                 if (!isPMMode) return;
                 const comment = lesson.comments.find(c => c.id === editingId);
-                if (comment) {
-                    comment.author = author;
-                    comment.category = category;
-                    comment.page = page;
-                    comment.content = content;
-                }
-            } else {
-                const newComment = {
-                    id: 'c_' + Date.now(),
-                    author,
-                    category,
-                    page,
-                    content,
-                    isAdopted: false,
-                    createdAt: new Date().toLocaleDateString('zh-TW', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })
-                };
-                lesson.comments.push(newComment);
+                if (!comment) return;
+                Object.assign(comment, {author,category,page,content});
+                if (await saveToCloud()) cancelCommentEdit();
+                return;
             }
-
-            if (await saveToCloud()) cancelCommentEdit();
+            const id = 'c_' + crypto.randomUUID();
+            const comment = {id,author,category,page,content,isAdopted:false,uid:currentUser.uid,createdAt:new Date().toLocaleString('zh-TW')};
+            const button = document.getElementById('submitCommentBtn');
+            button.disabled = true;
+            try {
+                await window.fbSet(window.fbRef(window.fbDb, 'estate_lessons/' + lessonPath + '/comments/' + id), comment);
+                cancelCommentEdit(); syncMessage('回饋已儲存至雲端');
+            } catch { syncMessage('回饋儲存失敗，請稍後再試', true); }
+            finally { button.disabled = false; }
         }
 
         function toggleLock(id) {
