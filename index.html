@@ -14,7 +14,7 @@
     <!-- Firebase SDK (v9 模組化載入) -->
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.1/firebase-app.js";
-        import { getDatabase, ref, onValue, set } from "https://www.gstatic.com/firebasejs/9.22.1/firebase-database.js";
+        import { getDatabase, ref, onValue, set, runTransaction } from "https://www.gstatic.com/firebasejs/9.22.1/firebase-database.js";
 
         const firebaseConfig = {
             apiKey: "AIzaSyAdIAh1uG2RZ2CdV3xqkhCafZ4Vm3wEabM",
@@ -27,7 +27,10 @@
         };
 
         const app = initializeApp(firebaseConfig);
-        const db = getDatabase(app);
+        let db;
+        try { db = getDatabase(app, localStorage.getItem('estate_database_url') || undefined); }
+        catch (error) { window.fbInitError = error.message; }
+        window.fbTransaction = runTransaction;
         window.fbDb = db;
         window.fbRef = ref;
         window.fbOnValue = onValue;
@@ -87,7 +90,7 @@
                     <i class="fa-solid fa-key"></i> 修改密碼
                 </button>
 
-                <button onclick="openAddLessonModal()" class="text-xs md:text-sm bg-amber-500 hover:bg-amber-400 text-emerald-950 font-bold px-3 py-1.5 rounded-full transition shadow flex items-center gap-1.5">
+                <button id="addLessonBtn" onclick="openAddLessonModal()" class="hidden text-xs md:text-sm bg-amber-500 hover:bg-amber-400 text-emerald-950 font-bold px-3 py-1.5 rounded-full transition shadow flex items-center gap-1.5">
                     <i class="fa-solid fa-plus"></i>
                     <span>新增教案</span>
                 </button>
@@ -95,6 +98,13 @@
         </div>
     </header>
 
+    <div class="max-w-7xl mx-auto px-4 py-2 text-xs text-slate-600 w-full">
+        <p>教案僅供瀏覽，請於討論區留下建議；教案資料由 PM 維護。下載限制需由檔案擁有者於 Google Drive 設定。</p>
+        <div class="flex gap-2 flex-wrap mt-2">
+        <button onclick="exportFeedback()" class="bg-white border rounded px-3 py-2">匯出全部教案回饋 CSV</button>
+        <button id="databaseConfigBtn" onclick="configureDatabase()" class="hidden bg-white border rounded px-3 py-2">設定資料庫連線</button>
+        </div><p id="connectionMessage" role="status" class="mt-2"></p>
+    </div>
     <!-- 分類篩選與管理列 -->
     <div class="bg-white border-b border-slate-200 shadow-sm sticky top-[61px] z-20">
         <div class="max-w-7xl mx-auto px-4 py-2 flex items-center justify-between gap-2 overflow-x-auto text-sm no-scrollbar">
@@ -141,12 +151,12 @@
                 <!-- 左側 70% 預覽區 (精準右上方防護罩，保持可自由滑動翻頁) -->
                 <div class="w-full md:w-[65%] lg:w-[70%] bg-slate-200 border-r border-slate-300 flex flex-col h-1/2 md:h-full relative">
                     <div class="bg-slate-300 px-3 py-1.5 text-xs text-slate-600 flex justify-between items-center border-b border-slate-300">
-                        <span><i class="fa-solid fa-shield-halved text-emerald-600 mr-1"></i> 受保護教案視窗 (可自由滾動，已屏蔽外鏈按鈕)</span>
+                        <span><i class="fa-solid fa-shield-halved text-emerald-600 mr-1"></i> 教案唯讀預覽（下載權限依原始檔案設定）</span>
                     </div>
                     <div id="pdfViewerContainer" class="flex-grow w-full bg-slate-800 flex items-center justify-center relative overflow-hidden">
                         <!-- 精準遮罩：僅覆蓋右上角的外鏈/下載按鈕區 (寬160px, 高65px)，其餘 95% 區域皆可自由滑動 -->
                         <div class="absolute top-0 right-0 w-40 h-16 bg-transparent z-20" style="pointer-events: auto;" oncontextmenu="return false;"></div>
-                        <iframe id="pdfIframe" src="" class="w-full h-full border-0 relative z-10"></iframe>
+                        <iframe id="pdfIframe" title="教案唯讀預覽" referrerpolicy="no-referrer" sandbox="allow-scripts allow-same-origin" src="" class="w-full h-full border-0 relative z-10"></iframe>
                     </div>
                 </div>
 
@@ -161,7 +171,7 @@
 
                     <div class="p-3 border-t border-slate-200 bg-slate-50 shrink-0">
                         <div id="lockWarningNotice" class="hidden mb-2 p-2 bg-amber-100 border border-amber-300 text-amber-800 text-xs rounded flex items-center justify-between">
-                            <span>⚠️ 此教案已被 PM 鎖定，無法新增回饋。</span>
+                            <span>此教案已鎖定編輯，仍歡迎提出調整建議。</span>
                         </div>
 
                         <form id="commentForm" onsubmit="handleAddComment(event)" class="space-y-2">
@@ -329,67 +339,105 @@
         let currentFilterCat = 'all';
         let activeLessonId = null;
 
-        // 防截圖鍵盤監聽
-        window.addEventListener('keydown', (e) => {
-            if (e.key === 'PrintScreen' || (e.ctrlKey && e.key === 'p')) {
-                alert('⚠️ 本系統教案受保護，禁止截圖與列印。');
-                navigator.clipboard.writeText('');
-            }
-        });
-
-        // 雲端即時連線監聽
+        let cloudReady = false;
+        let baselineLessons = [];
+        let baselineCategories = [];
+        const clone = value => JSON.parse(JSON.stringify(value));
+        const asList = value => (Array.isArray(value) ? value : Object.values(value || {})).filter(Boolean);
+        const escapeHTML = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+        const handlerArg = value => escapeHTML(JSON.stringify(String(value)));
+        function syncMessage(text, error = false) {
+            document.getElementById('syncStatusTag').textContent = text;
+            document.getElementById('connectionMessage').textContent = error ? text + '；變更尚未確認儲存，請勿關閉本頁。請 PM 確認資料庫網址與存取規則。' : text;
+        }
+        function configureDatabase() {
+            if (!isPMMode) return;
+            const url = prompt('請貼上 Firebase Console → Realtime Database 的資料庫網址（不是網站網址）：', localStorage.getItem('estate_database_url') || '');
+            if (url === null) return;
+            if (!/^https:\/\/[a-zA-Z0-9.-]+\.(firebaseio\.com|firebasedatabase\.app)\/?$/.test(url.trim())) return alert('請填入有效的 Firebase Realtime Database HTTPS 網址。');
+            localStorage.setItem('estate_database_url', url.trim());
+            location.reload();
+        }
         window.addEventListener('load', () => {
             const savedName = localStorage.getItem('estate_user_name');
             if (savedName) document.getElementById('commentAuthor').value = savedName;
-
-            const checkFbTimer = setInterval(() => {
-                if (window.fbDb) {
-                    clearInterval(checkFbTimer);
-                    initFirebaseListener();
+            renderCategories(); renderCards();
+            syncMessage('正在連線；先顯示七份預設教案');
+            let attempts = 0;
+            const timer = setInterval(() => {
+                if (window.fbDb) { clearInterval(timer); initFirebaseListener(); }
+                else if (++attempts >= 25 || window.fbInitError) {
+                    clearInterval(timer); syncMessage('雲端尚未連線，僅供預覽。' + (window.fbInitError || ''), true);
                 }
             }, 300);
         });
-
         function initFirebaseListener() {
-            const lessonsRef = window.fbRef(window.fbDb, 'estate_lessons');
-            const categoriesRef = window.fbRef(window.fbDb, 'estate_categories');
-
-            // 實時接收雲端更新 (若雲端無資料或為空物件，自動強制推播寫入 7 份預設教案)
-            window.fbOnValue(lessonsRef, (snapshot) => {
-                const data = snapshot.val();
-                const hasData = data && (Array.isArray(data) ? data.length > 0 : Object.keys(data).length > 0);
-
-                if (hasData) {
-                    lessons = Array.isArray(data) ? data : Object.values(data);
-                } else {
-                    lessons = sampleLessons;
-                    saveToCloud(); // 寫入 Firebase
-                }
-                renderCards();
-                if (activeLessonId) {
-                    const currentL = lessons.find(l => l.id === activeLessonId);
-                    if (currentL) renderComments(currentL);
-                }
-            });
-
-            window.fbOnValue(categoriesRef, (snapshot) => {
-                const data = snapshot.val();
-                const hasCategories = data && (Array.isArray(data) ? data.length > 0 : Object.keys(data).length > 0);
-
-                if (hasCategories) {
-                    categories = Array.isArray(data) ? data : Object.values(data);
-                } else {
-                    categories = sampleCategories;
-                    saveToCloud();
-                }
-                renderCategories();
-            });
+            let lessonsLoaded = false, categoriesLoaded = false;
+            const fail = error => { cloudReady = false; syncMessage('雲端連線失敗：' + error.message, true); };
+            const ready = () => {
+                cloudReady = lessonsLoaded && categoriesLoaded;
+                if (cloudReady) syncMessage('雲端資料已載入');
+            };
+            window.fbOnValue(window.fbRef(window.fbDb, 'estate_lessons'), snapshot => {
+                const remote = asList(snapshot.val());
+                baselineLessons = clone(remote);
+                // 預設教案補入畫面，不覆蓋雲端已有的教案與留言。
+                lessons = remote.concat(sampleLessons.filter(sample => !remote.some(item => item.id === sample.id))).map(item => ({...item, comments: asList(item.comments)}));
+                lessonsLoaded = true; renderCards(); ready();
+                if (activeLessonId) { const item = lessons.find(l => l.id === activeLessonId); if (item) renderComments(item); }
+            }, fail);
+            window.fbOnValue(window.fbRef(window.fbDb, 'estate_categories'), snapshot => {
+                baselineCategories = asList(snapshot.val());
+                categories = [...new Set([...(snapshot.val() === null ? sampleCategories : baselineCategories), ...lessons.filter(l => !l.isArchived).map(l => l.category)])];
+                categoriesLoaded = true; renderCategories(); ready();
+            }, fail);
+            setTimeout(() => { if (!cloudReady) syncMessage('雲端讀取尚未完成，請檢查連線或設定資料庫網址', true); }, 10000);
         }
-
-        function saveToCloud() {
-            if (!window.fbDb) return;
-            window.fbSet(window.fbRef(window.fbDb, 'estate_lessons'), lessons);
-            window.fbSet(window.fbRef(window.fbDb, 'estate_categories'), categories);
+        async function saveToCloud() {
+            renderCategories(); renderCards();
+            if (!cloudReady || !window.fbDb) { syncMessage('尚未連線，無法儲存', true); return false; }
+            const desired = clone(lessons), before = clone(baselineLessons);
+            const wantedCategories = clone(categories), beforeCategories = clone(baselineCategories);
+            syncMessage('正在儲存…');
+            try {
+                await window.fbTransaction(window.fbRef(window.fbDb, 'estate_lessons'), current => {
+                    const remote = asList(current);
+                    for (const old of before) {
+                        if (!desired.some(l => l.id === old.id)) { const i = remote.findIndex(l => l.id === old.id); if (i >= 0) remote.splice(i, 1); }
+                    }
+                    for (const item of desired) {
+                        const old = before.find(l => l.id === item.id);
+                        if (old && JSON.stringify(old) === JSON.stringify(item)) continue;
+                        const i = remote.findIndex(l => l.id === item.id);
+                        if (i < 0) { if (!old) remote.push(item); continue; }
+                        const merged = {...remote[i]};
+                        for (const key of Object.keys(item)) if (key !== 'comments' && (!old || JSON.stringify(item[key]) !== JSON.stringify(old[key]))) merged[key] = item[key];
+                        const comments = asList(merged.comments);
+                        for (const comment of asList(item.comments)) {
+                            const prior = asList(old?.comments).find(c => c.id === comment.id);
+                            if (prior && JSON.stringify(prior) === JSON.stringify(comment)) continue;
+                            const j = comments.findIndex(c => c.id === comment.id);
+                            if (j < 0) comments.push(comment); else comments[j] = comment;
+                        }
+                        merged.comments = comments; remote[i] = merged;
+                    }
+                    return remote;
+                }, {applyLocally: false});
+                await window.fbTransaction(window.fbRef(window.fbDb, 'estate_categories'), current => [...new Set([...asList(current).filter(c => !beforeCategories.includes(c) || wantedCategories.includes(c)), ...wantedCategories.filter(c => !beforeCategories.includes(c))])], {applyLocally: false});
+                syncMessage('已儲存至雲端'); return true;
+            } catch (error) { syncMessage('儲存失敗：' + error.message, true); return false; }
+        }
+        function exportFeedback(id) {
+            const rows = [['教案名稱','教案摘要','教案分類','教案狀態','講師姓名','建議類型','頁數或章節','建議內容','採納狀態','留言時間']];
+            for (const lesson of lessons.filter(l => !l.isArchived && (!id || l.id === id))) {
+                const comments = asList(lesson.comments);
+                for (const c of comments.length ? comments : [{}]) rows.push([lesson.title, lesson.description, lesson.category, lesson.status, c.author, c.category, c.page, c.content || '尚無回饋', c.id ? (c.isAdopted ? '已採納' : '待討論') : '', c.createdAt]);
+            }
+            const csvCell = value => { let v = String(value ?? ''); if (/^[\s]*[=+@-]/.test(v)) v = "'" + v; return '"' + v.replace(/"/g, '""') + '"'; };
+            const blob = new Blob(['\uFEFF' + rows.map(row => row.map(csvCell).join(',')).join('\r\n')], {type:'text/csv;charset=utf-8;'});
+            const link = document.createElement('a'); link.href = URL.createObjectURL(blob);
+            link.download = '教案回饋_' + (id || '全部') + '_' + new Date().toLocaleDateString('sv-SE') + '.csv';
+            link.click(); setTimeout(() => URL.revokeObjectURL(link.href), 1000);
         }
 
         function renderCategories() {
@@ -405,11 +453,11 @@
                 const activeStyle = isActive ? 'bg-emerald-100 text-emerald-800 font-medium border-emerald-300' : 'bg-slate-100 text-slate-600 hover:bg-slate-200';
 
                 wrapper.innerHTML = `
-                    <button onclick="filterCategory('${cat}')" class="cat-filter-btn ${activeStyle} ${isPMMode ? 'rounded-l-full pr-1' : 'rounded-full px-3'} py-1 text-xs transition border-y border-l border-r ${!isPMMode ? 'border-r' : 'border-r-0'} shrink-0">
-                        ${cat}
+                    <button onclick="filterCategory(${handlerArg(cat)})" class="cat-filter-btn ${activeStyle} ${isPMMode ? 'rounded-l-full pr-1' : 'rounded-full px-3'} py-1 text-xs transition border-y border-l border-r ${!isPMMode ? 'border-r' : 'border-r-0'} shrink-0">
+                        ${escapeHTML(cat)}
                     </button>
                     ${isPMMode ? `
-                        <button onclick="deleteCategory('${cat}')" title="刪除 ${cat} 分類" class="${activeStyle} border-y border-r border-slate-300 rounded-r-full pr-2 pl-1 py-1 text-xs text-slate-400 hover:text-rose-600 transition">
+                        <button onclick="deleteCategory(${handlerArg(cat)})" title="刪除 ${escapeHTML(cat)} 分類" class="${activeStyle} border-y border-r border-slate-300 rounded-r-full pr-2 pl-1 py-1 text-xs text-slate-400 hover:text-rose-600 transition">
                             <i class="fa-solid fa-xmark"></i>
                         </button>
                     ` : ''}
@@ -428,6 +476,7 @@
         }
 
         function deleteCategory(catName) {
+            if (!isPMMode) return;
             if (confirm(`確定要刪除「${catName}」分類嗎？`)) {
                 categories = categories.filter(c => c !== catName);
                 if (currentFilterCat === catName) currentFilterCat = 'all';
@@ -436,6 +485,7 @@
         }
 
         function addNewCategoryPrompt() {
+            if (!isPMMode) return;
             const newCat = prompt('請輸入欲新增的教案分類名稱：');
             if (newCat && newCat.trim() !== '') {
                 const trimmed = newCat.trim();
@@ -467,6 +517,8 @@
                 document.getElementById('addCatBtn').classList.add('hidden');
                 document.getElementById('changePmPassBtn').classList.add('hidden');
             }
+            document.getElementById('addLessonBtn').classList.toggle('hidden', !isPMMode);
+            document.getElementById('databaseConfigBtn').classList.toggle('hidden', !isPMMode);
             renderCategories();
             renderCards();
             if (activeLessonId) openSplitModal(activeLessonId);
@@ -495,7 +547,7 @@
                 const matchCat = currentFilterCat === 'all' || item.category === currentFilterCat;
                 const matchKw = item.title.toLowerCase().includes(searchKw) || 
                                 item.description.toLowerCase().includes(searchKw);
-                return matchCat && matchKw;
+                return !item.isArchived && matchCat && matchKw;
             });
 
             if (filtered.length === 0) {
@@ -521,12 +573,12 @@
                     pmControlHTML = `
                         <div class="bg-amber-50 p-2.5 border-t border-amber-200 flex justify-between items-center text-xs gap-1">
                             <div class="flex gap-1">
-                                <button onclick="openEditLessonModal('${lesson.id}')" class="px-2.5 py-1 bg-blue-600 text-white rounded font-bold shadow-sm"><i class="fa-solid fa-pen"></i> 編輯</button>
-                                <button onclick="deleteLesson('${lesson.id}')" class="px-2.5 py-1 bg-rose-600 text-white rounded font-bold shadow-sm"><i class="fa-solid fa-trash"></i> 刪除</button>
+                                <button onclick="openEditLessonModal(${handlerArg(lesson.id)})" class="px-2.5 py-1 bg-blue-600 text-white rounded font-bold shadow-sm"><i class="fa-solid fa-pen"></i> 編輯</button>
+                                <button onclick="deleteLesson(${handlerArg(lesson.id)})" class="px-2.5 py-1 bg-rose-600 text-white rounded font-bold shadow-sm"><i class="fa-solid fa-trash"></i> 刪除</button>
                             </div>
                             <div class="flex gap-1 items-center">
-                                <button onclick="toggleLock('${lesson.id}')" class="px-2 py-1 bg-white border border-amber-300 rounded font-medium">${lesson.isLocked ? '🔓 解鎖' : '🔒 鎖定'}</button>
-                                <select onchange="changeStatus('${lesson.id}', this.value)" class="bg-white border border-amber-300 rounded px-1.5 py-1 font-medium">
+                                <button onclick="toggleLock(${handlerArg(lesson.id)})" class="px-2 py-1 bg-white border border-amber-300 rounded font-medium">${lesson.isLocked ? '🔓 解鎖' : '🔒 鎖定'}</button>
+                                <select onchange="changeStatus(${handlerArg(lesson.id)}, this.value)" class="bg-white border border-amber-300 rounded px-1.5 py-1 font-medium">
                                     <option value="徵求回饋中" ${lesson.status==='徵求回饋中'?'selected':''}>徵求中</option>
                                     <option value="修改中" ${lesson.status==='修改中'?'selected':''}>修改中</option>
                                     <option value="已完稿" ${lesson.status==='已完稿'?'selected':''}>已完稿</option>
@@ -539,25 +591,26 @@
                 card.innerHTML = `
                     <div class="p-5">
                         <div class="flex justify-between items-start gap-2 mb-2">
-                            <span class="text-xs font-bold bg-slate-100 text-slate-600 px-2.5 py-1 rounded-full border border-slate-200">${lesson.category}</span>
+                            <span class="text-xs font-bold bg-slate-100 text-slate-600 px-2.5 py-1 rounded-full border border-slate-200">${escapeHTML(lesson.category)}</span>
                             <div class="flex items-center gap-1">
                                 ${lesson.isLocked ? '<span class="text-xs bg-rose-100 text-rose-700 px-2 py-0.5 rounded font-bold"><i class="fa-solid fa-lock"></i> 鎖定</span>' : ''}
-                                <span class="text-xs px-2.5 py-1 rounded-full border font-bold ${statusBg}">${lesson.status}</span>
+                                <span class="text-xs px-2.5 py-1 rounded-full border font-bold ${statusBg}">${escapeHTML(lesson.status)}</span>
                             </div>
                         </div>
-                        <h3 class="font-bold text-slate-800 text-base mb-2 hover:text-emerald-700 cursor-pointer" onclick="openSplitModal('${lesson.id}')">${lesson.title}</h3>
-                        <p class="text-xs text-slate-500 line-clamp-2 mb-4">${lesson.description}</p>
+                        <h3 class="font-bold text-slate-800 text-base mb-2 hover:text-emerald-700 cursor-pointer" onclick="openSplitModal(${handlerArg(lesson.id)})">${escapeHTML(lesson.title)}</h3>
+                        <p class="text-xs text-slate-500 line-clamp-2 mb-4">${escapeHTML(lesson.description)}</p>
                         <div class="text-xs text-slate-400 flex items-center justify-between border-t border-slate-100 pt-3">
-                            <span>建立者：${lesson.createdBy}</span>
-                            <span>${lesson.createdAt}</span>
+                            <span>建立者：${escapeHTML(lesson.createdBy)}</span>
+                            <span>${escapeHTML(lesson.createdAt)}</span>
                         </div>
                     </div>
                     <div class="bg-slate-50 px-5 py-3 border-t border-slate-100 flex items-center justify-between">
-                        <button onclick="openSplitModal('${lesson.id}')" class="text-xs text-emerald-700 font-bold hover:text-emerald-900 flex items-center gap-1">
+                        <button onclick="openSplitModal(${handlerArg(lesson.id)})" class="text-xs text-emerald-700 font-bold hover:text-emerald-900 flex items-center gap-1">
                             <i class="fa-solid fa-book-open"></i> 預覽與留言
                         </button>
                         <span class="text-xs text-slate-500 font-medium bg-slate-200/60 px-2 py-0.5 rounded-full">💬 ${commentCount} 則建議</span>
                     </div>
+                    <button onclick="exportFeedback(${handlerArg(lesson.id)})" class="text-xs text-emerald-800 px-5 py-2 text-left border-t">匯出此教案回饋 CSV</button>
                     ${pmControlHTML}
                 `;
                 grid.appendChild(card);
@@ -565,6 +618,7 @@
         }
 
         function openEditLessonModal(id) {
+            if (!isPMMode) return;
             const lesson = lessons.find(l => l.id === id);
             if (!lesson) return;
             document.getElementById('editLessonId').value = lesson.id;
@@ -577,26 +631,33 @@
         }
 
         function deleteLesson(id) {
+            if (!isPMMode) return;
             if (confirm('確定要徹底刪除此教案嗎？')) {
-                lessons = lessons.filter(l => l.id !== id);
+                const lesson = lessons.find(l => l.id === id);
+                if (lesson) lesson.isArchived = true;
                 saveToCloud();
             }
         }
 
-        function handleSaveLesson(e) {
+        async function handleSaveLesson(e) {
             e.preventDefault();
+            if (!isPMMode || !cloudReady) return alert('請先開啟 PM 模式並確認雲端連線成功。');
             const editId = document.getElementById('editLessonId').value;
             const title = document.getElementById('newTitle').value.trim();
             const category = document.getElementById('newCategory').value;
             const fileUrl = document.getElementById('newFileUrl').value.trim();
             const description = document.getElementById('newDescription').value.trim();
 
+            if (!title || !category) return alert('請填寫名稱與分類。');
+            const driveMatch = fileUrl.match(/^https:\/\/drive\.google\.com\/file\/d\/([a-zA-Z0-9_-]+)/);
+            if (!driveMatch) return alert('請使用 Google Drive 檔案分享連結，並於原始檔設定檢視者與下載限制。');
+            const previewUrl = 'https://drive.google.com/file/d/' + driveMatch[1] + '/preview';
             if (editId) {
                 const lesson = lessons.find(l => l.id === editId);
                 if (lesson) {
                     lesson.title = title;
                     lesson.category = category;
-                    lesson.fileUrl = fileUrl;
+                    lesson.fileUrl = previewUrl;
                     lesson.description = description;
                 }
             } else {
@@ -604,7 +665,7 @@
                     id: 'tax_' + Date.now(),
                     title,
                     category,
-                    fileUrl,
+                    fileUrl: previewUrl,
                     description,
                     status: '徵求回饋中',
                     isLocked: false,
@@ -615,11 +676,11 @@
                 lessons.unshift(newLesson);
             }
 
-            saveToCloud();
-            closeAddLessonModal();
+            if (await saveToCloud()) closeAddLessonModal();
         }
 
         function openAddLessonModal() {
+            if (!isPMMode) return;
             document.getElementById('editLessonId').value = '';
             document.getElementById('lessonModalTitle').innerHTML = '<i class="fa-solid fa-file-circle-plus text-emerald-600"></i> 發布新教案';
             document.querySelector('#addLessonModal form').reset();
@@ -645,7 +706,7 @@
 
             if (lesson.isLocked) {
                 lockBadge.classList.remove('hidden');
-                commentForm.classList.add('opacity-50', 'pointer-events-none');
+                commentForm.classList.remove('opacity-50', 'pointer-events-none');
                 lockNotice.classList.remove('hidden');
             } else {
                 lockBadge.classList.add('hidden');
@@ -682,25 +743,25 @@
             comments.forEach(c => {
                 const div = document.createElement('div');
                 div.className = `p-3 rounded-lg border text-xs space-y-1 ${c.isAdopted ? 'bg-amber-50/80 border-amber-300' : 'bg-slate-50 border-slate-200'}`;
-                const canEdit = isPMMode || (currentUser && currentUser === c.author);
+                const canEdit = isPMMode;
 
                 div.innerHTML = `
                     <div class="flex justify-between items-center">
-                        <span class="font-bold text-slate-700">${c.author}</span>
+                        <span class="font-bold text-slate-700">${escapeHTML(c.author)}</span>
                         <div class="flex items-center gap-2">
-                            <span class="text-[10px] text-slate-400">${c.createdAt}</span>
-                            ${canEdit ? `<button onclick="startEditComment('${c.id}')" class="text-[10px] text-blue-600 hover:underline font-bold"><i class="fa-solid fa-pen"></i> 編輯</button>` : ''}
+                            <span class="text-[10px] text-slate-400">${escapeHTML(c.createdAt)}</span>
+                            ${canEdit ? `<button onclick="startEditComment(${handlerArg(c.id)})" class="text-[10px] text-blue-600 hover:underline font-bold"><i class="fa-solid fa-pen"></i> 編輯</button>` : ''}
                         </div>
                     </div>
                     <div class="flex flex-wrap gap-1 my-1">
-                        <span class="bg-emerald-100 text-emerald-800 px-1.5 py-0.5 rounded text-[10px] font-medium">${c.category}</span>
-                        ${c.page ? `<span class="bg-slate-200 text-slate-700 px-1.5 py-0.5 rounded text-[10px]">${c.page}</span>` : ''}
+                        <span class="bg-emerald-100 text-emerald-800 px-1.5 py-0.5 rounded text-[10px] font-medium">${escapeHTML(c.category)}</span>
+                        ${c.page ? `<span class="bg-slate-200 text-slate-700 px-1.5 py-0.5 rounded text-[10px]">${escapeHTML(c.page)}</span>` : ''}
                         ${c.isAdopted ? `<span class="bg-amber-500 text-white font-bold px-1.5 py-0.5 rounded text-[10px]"><i class="fa-solid fa-award"></i> 已採納至 V2</span>` : ''}
                     </div>
-                    <p class="text-slate-600 leading-relaxed whitespace-pre-wrap">${c.content}</p>
+                    <p class="text-slate-600 leading-relaxed whitespace-pre-wrap">${escapeHTML(c.content)}</p>
                     ${isPMMode ? `
                         <div class="pt-1 flex justify-end">
-                            <button onclick="toggleAdoptComment('${c.id}')" class="text-[10px] text-amber-800 underline font-bold">
+                            <button onclick="toggleAdoptComment(${handlerArg(c.id)})" class="text-[10px] text-amber-800 underline font-bold">
                                 ${c.isAdopted ? '取消採納標記' : '✅ 標記為採納'}
                             </button>
                         </div>
@@ -711,6 +772,7 @@
         }
 
         function startEditComment(commentId) {
+            if (!isPMMode) return;
             const lesson = lessons.find(l => l.id === activeLessonId);
             if (!lesson) return;
             const comment = (lesson.comments || []).find(c => c.id === commentId);
@@ -734,15 +796,13 @@
             document.getElementById('cancelEditCommentBtn').classList.add('hidden');
         }
 
-        function handleAddComment(e) {
+        async function handleAddComment(e) {
             e.preventDefault();
             if (!activeLessonId) return;
+            if (!cloudReady) return alert('雲端尚未連線，請稍後再送出回饋。');
 
             const lesson = lessons.find(l => l.id === activeLessonId);
-            if (lesson.isLocked) {
-                alert('該教案已被 PM 鎖定！');
-                return;
-            }
+
 
             const author = document.getElementById('commentAuthor').value.trim();
             const category = document.getElementById('commentCategory').value;
@@ -762,6 +822,7 @@
             if (!lesson.comments) lesson.comments = [];
 
             if (editingId) {
+                if (!isPMMode) return;
                 const comment = lesson.comments.find(c => c.id === editingId);
                 if (comment) {
                     comment.author = author;
@@ -782,11 +843,11 @@
                 lesson.comments.push(newComment);
             }
 
-            saveToCloud();
-            cancelCommentEdit();
+            if (await saveToCloud()) cancelCommentEdit();
         }
 
         function toggleLock(id) {
+            if (!isPMMode) return;
             const lesson = lessons.find(l => l.id === id);
             if (lesson) {
                 lesson.isLocked = !lesson.isLocked;
@@ -795,6 +856,7 @@
         }
 
         function changeStatus(id, newStatus) {
+            if (!isPMMode) return;
             const lesson = lessons.find(l => l.id === id);
             if (lesson) {
                 lesson.status = newStatus;
@@ -803,6 +865,7 @@
         }
 
         function toggleAdoptComment(commentId) {
+            if (!isPMMode) return;
             const lesson = lessons.find(l => l.id === activeLessonId);
             if (lesson && lesson.comments) {
                 const comment = lesson.comments.find(c => c.id === commentId);
@@ -821,3 +884,4 @@
     </script>
 </body>
 </html>
+
